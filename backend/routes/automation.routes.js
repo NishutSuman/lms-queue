@@ -69,8 +69,11 @@ AutomationRouter.post("/add-data", async (req, res) => {
       });
     }
 
-    const records = rows.slice(1).map((row) => {
-      const obj = {};
+    const records = rows.slice(1).map((row, index) => {
+      const obj = {
+        rowIndex: index + 2, // +2 because row 1 is header, and Excel is 1-indexed
+        uploadedAt: new Date().toISOString(),
+      };
       headers.forEach((h, i) => (obj[h] = row[i] || ""));
       return obj;
     });
@@ -408,35 +411,23 @@ AutomationRouter.get("/get-automation-status", async (req, res) => {
       const data = await connection.hgetall(key);
 
       if (data && Object.keys(data).length > 0) {
-
         // REMOVE PREFIX like "assignments:" or "lectures:"
         const cleanKey = key.replace(`${type}:`, "");
-        // COMMON FIELDS
-        const commonData = {
+
+        // Return ALL fields from Redis (entire sheet row data)
+        results.push({
+          ...data,
           redisKey: cleanKey,
-          title: data.title || "",
-          batch: data.batch || "",
-          section: data.section || "",
-        };
-
-        // DIFFERENT LOGIC FOR ASSIGNMENTS VS LECTURES
-        if (type === "assignments") {
-          results.push({
-            ...commonData,
-            isCloned: data.isCloned || "N/A",
-            isAssignmentCreated: data.isAssignmentCreated || "N/A",
-            isNotesUpdated: data.isNotesUpdated || "N/A",
-          });
-        }
-
-        if (type === "lectures") {
-          results.push({
-            ...commonData,
-            isLectureCreated: data.isLectureCreated || "N/A",
-          });
-        }
+        });
       }
     }
+
+    // Sort by rowIndex to preserve sheet order
+    results.sort((a, b) => {
+      const aIndex = parseInt(a.rowIndex) || 999999;
+      const bIndex = parseInt(b.rowIndex) || 999999;
+      return aIndex - bIndex;
+    });
     return res.json({
       type,
       total: results.length,
