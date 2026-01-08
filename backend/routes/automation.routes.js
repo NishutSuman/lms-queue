@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from "uuid";
 import { getSheetsClient } from "../configs/googleSheetClient.js";
 import { assessmentCloneRenameQueue, assignmentCreationQueue, connection, notesUpdationQueue, lectureCreationQueue} from "../configs/redis_bullmq.config.js";
 import { getConfig } from "../utils/getConfig.js";
+import { validateAssignmentsBatch, validateLecturesBatch, checkDuplicateTitles } from "../utils/validation.js";
 const { GOOGLE_SHEET_ID } = getConfig();
 
 
@@ -79,6 +80,32 @@ AutomationRouter.post("/add-data", async (req, res) => {
     });
 
     console.log("📌 Records fetched:", records.length);
+
+    // --- VALIDATE DATA ---
+    let validationResult;
+    if (type === "assignments") {
+      validationResult = validateAssignmentsBatch(records);
+    } else {
+      validationResult = validateLecturesBatch(records);
+    }
+
+    // Check for duplicate titles
+    const duplicates = checkDuplicateTitles(records);
+
+    // If validation fails, return detailed errors
+    if (!validationResult.valid || duplicates.length > 0) {
+      return res.status(400).json({
+        message: "Data validation failed. Please fix the errors and try again.",
+        validation: {
+          totalRows: validationResult.totalRows,
+          validRows: validationResult.validRows,
+          invalidRows: validationResult.invalidRows,
+          duplicateTitles: duplicates
+        }
+      });
+    }
+
+    console.log("✅ Validation passed for all records");
 
     // --- DELETE OLD REDIS DATA ---
     const pattern = `${type}:*`;

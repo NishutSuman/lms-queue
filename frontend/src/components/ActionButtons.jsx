@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { Button, message } from "antd";
+import ValidationModal from "./ValidationModal";
 
 const ActionButtons = ({
   type,
@@ -7,6 +9,8 @@ const ActionButtons = ({
   setLoadingAction,
 }) => {
   const apiUrl = import.meta.env.VITE_API_URL;
+  const [validationModalOpen, setValidationModalOpen] = useState(false);
+  const [validationData, setValidationData] = useState(null);
 
   // Build endpoint: ensure no double slashes
   const buildUrl = (path) => `${apiUrl.replace(/\/+$/, "")}/api${path}?type=${type}`;
@@ -26,6 +30,21 @@ const ActionButtons = ({
       });
 
       if (!response.ok) {
+        // Try to parse validation errors from response
+        try {
+          const errorData = await response.json();
+
+          // Check if this is a validation error
+          if (errorData.validation && actionName === "Upload data from CSV") {
+            message.destroy(actionName);
+            setValidationData(errorData.validation);
+            setValidationModalOpen(true);
+            return; // Don't throw error, show modal instead
+          }
+        } catch (parseErr) {
+          // If parsing fails, fall through to generic error
+        }
+
         const errText = await response.text().catch(() => "");
         throw new Error(
           `Request failed with status ${response.status} ${errText}`
@@ -145,6 +164,13 @@ const ActionButtons = ({
       >
         Clear data from CSV
       </Button>
+
+      {/* Validation Modal */}
+      <ValidationModal
+        open={validationModalOpen}
+        onClose={() => setValidationModalOpen(false)}
+        validationData={validationData}
+      />
     </div>
   );
 };
