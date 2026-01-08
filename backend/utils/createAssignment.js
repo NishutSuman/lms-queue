@@ -274,6 +274,20 @@ export async function createAssignment(page, assignment) {
 		// Step 3️⃣ Type the time (e.g. "08:00 PM")
 		await page.keyboard.type(assignment.endTime, { delay: 30 });
 
+		// 🔧 Handle Show Score checkbox based on showScore column value
+		if (assignment.showScore && assignment.showScore.toLowerCase() === "yes") {
+			try {
+				const showScoreCheckbox = page.locator('label:has-text("Show Score")');
+				await showScoreCheckbox.waitFor({ state: "visible", timeout: 5000 });
+				await showScoreCheckbox.click();
+				console.log("✅ Show Score checkbox checked");
+			} catch (err) {
+				console.log("⚠️ Show Score checkbox not found or already checked, continuing...");
+			}
+		} else {
+			console.log("ℹ️ Show Score checkbox: skipped (value not 'yes')");
+		}
+
 		console.log("📚 now it will hit the create button");
 		const createButton = page.locator(
 			"xpath=/html/body/div/div/div/main/form/div[1]/div/button"
