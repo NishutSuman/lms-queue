@@ -39,56 +39,36 @@ const DataTable = ({ type, refreshKey, setTotalItems }) => {
 
       const items = result.data || [];
 
-      const formatted = items.map((item, index) => ({
-        key: index + 1,
-        redisId: item.redisKey,
-        rowIndex: item.rowIndex || "N/A",
-        title: item.title || "N/A",
-        batch: item.batch || "N/A",
-        section: item.section || "N/A",
+      const formatted = items.map((item, index) => {
+        // Start with all item fields (this preserves ALL sheet columns)
+        const record = {
+          ...item,
 
-        // Assignment specific fields
-        type: item.type || "N/A",
-        category: item.category || "N/A",
-        tags: item.tags || "N/A",
-        platforms: item.platforms || "N/A",
-        assess_client: item.assess_client || "N/A",
-        assessment_template_name: item.assessment_template_name || "N/A",
-        previous_assessment_templateName: item.previous_assessment_templateName || "N/A",
-        associated_lecture: item.associated_lecture || "N/A",
-        startDate: item.startDate || "N/A",
-        startTime: item.startTime || "N/A",
-        endDate: item.endDate || "N/A",
-        endTime: item.endTime || "N/A",
-        showScore: item.showScore || "N/A",
+          // Override/add these specific fields
+          key: index + 1,
+          redisId: item.redisKey,
 
-        // Lecture specific fields
-        host_name: item.host_name || "N/A",
-        zoom_link: item.zoom_link || "N/A",
-        notes: item.notes || "N/A",
+          // Status fields (added by workers, not in sheet initially)
+          assessmentClone: item.isCloned,
+          assignmentCreated: item.isAssignmentCreated,
+          notesUpdated: item.isNotesUpdated,
+          lectureCreated: item.isLectureCreated,
 
-        // Status fields
-        assessmentClone: item.isCloned,
-        assignmentCreated: item.isAssignmentCreated,
-        notesUpdated: item.isNotesUpdated,
-        lectureCreated: item.isLectureCreated,
+          // Flags
+          assessmentCloneFlag: isTrue(item.isCloned),
+          assignmentCreatedFlag: isTrue(item.isAssignmentCreated),
+          notesUpdatedFlag: isTrue(item.isNotesUpdated),
+          lectureCreatedFlag: isTrue(item.isLectureCreated),
 
-        // Flags
-        assessmentCloneFlag: isTrue(item.isCloned),
-        assignmentCreatedFlag: isTrue(item.isAssignmentCreated),
-        notesUpdatedFlag: isTrue(item.isNotesUpdated),
-        lectureCreatedFlag: isTrue(item.isLectureCreated),
+          // Error messages (added by workers)
+          assessmentCloneError: item.assessmentCloneError || "",
+          assignmentCreationError: item.assignmentCreationError || "",
+          notesUpdateError: item.notesUpdateError || "",
+          lectureCreationError: item.lectureCreationError || "",
+        };
 
-        // Error messages
-        assessmentCloneError: item.assessmentCloneError || "",
-        assignmentCreationError: item.assignmentCreationError || "",
-        notesUpdateError: item.notesUpdateError || "",
-        lectureCreationError: item.lectureCreationError || "",
-
-        // Metadata
-        uploadedAt: item.uploadedAt || "N/A",
-        lastUpdated: item.lastUpdated || "N/A",
-      }));
+        return record;
+      });
 
       setData(formatted);
       setFilteredData(formatted);
