@@ -1,0 +1,181 @@
+╔════════════════════════════════════════════════════════════════╗
+║        LMS AUTOMATION BACKEND - DEPLOYMENT CHECKLIST          ║
+╚════════════════════════════════════════════════════════════════╝
+
+PRE-DEPLOYMENT CHECKLIST:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+☐ Docker Desktop installed
+☐ Docker Desktop is running (green icon)
+☐ At least 8GB RAM available
+☐ At least 20GB disk space free
+☐ Internet connection active
+☐ Google OAuth credentials in .env file
+☐ LMS credentials in config.json file
+
+DEPLOYMENT STEPS:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. START DOCKER DESKTOP
+   ☐ Open Docker Desktop
+   ☐ Wait for "Docker Desktop is running" message
+   ☐ Verify green icon in system tray
+
+2. DEPLOY APPLICATION
+   ☐ Navigate to project folder
+   ☐ Double-click start.bat
+   ☐ Wait 5-10 minutes for first build
+   ☐ Verify "All services started successfully!" message
+
+3. SETUP GOOGLE OAUTH
+   ☐ Open browser
+   ☐ Visit http://localhost:8000/test
+   ☐ Login with Google account
+   ☐ Grant permissions
+   ☐ Verify "Tokens saved successfully" message
+
+4. VERIFY DEPLOYMENT
+   ☐ Run status.bat
+   ☐ All services show "Up" status
+   ☐ Redis shows "RUNNING"
+   ☐ API shows "RUNNING"
+
+FIRST-TIME USAGE:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+FOR ASSIGNMENTS:
+☐ Load data: POST /api/add-data?type=assignments
+☐ Clone assessments: POST /api/clone-assessment-template
+☐ Create assignments: POST /api/create-assignments
+☐ Update notes: POST /api/start-update-notes
+☐ Check status: GET /api/get-automation-status?type=assignments
+
+FOR LECTURES:
+☐ Load data: POST /api/add-data?type=lectures
+☐ Create lectures: POST /api/create-lectures
+☐ Check status: GET /api/get-automation-status?type=lectures
+
+DAILY OPERATIONS:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+START:
+☐ Ensure Docker Desktop is running
+☐ Run start.bat (if not already running)
+
+STOP:
+☐ Run stop.bat
+
+VIEW LOGS:
+☐ Run logs.bat
+☐ Press Ctrl+C to exit
+
+CHECK STATUS:
+☐ Run status.bat
+
+RESTART:
+☐ Run restart.bat
+
+TROUBLESHOOTING CHECKLIST:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+IF SERVICES WON'T START:
+☐ Check Docker Desktop is running
+☐ Check Docker Desktop Resources (Settings > Resources)
+   - Memory: at least 6GB
+   - CPUs: at least 4
+☐ Check port 8000 is not in use
+☐ Run: docker-compose down
+☐ Run: docker-compose up -d
+☐ Check logs: logs.bat
+
+IF OAUTH NOT WORKING:
+☐ Check tokens.json exists
+☐ Visit http://localhost:8000/test to re-authenticate
+☐ Check .env has correct Google credentials
+☐ Check redirect URI matches: http://localhost:8000/oauth2callback
+
+IF WORKERS NOT PROCESSING:
+☐ Check Redis: docker-compose exec redis redis-cli ping
+☐ Check worker logs: logs.bat
+☐ Restart workers: restart.bat
+☐ Check jobs are queued in Redis
+
+IF BROWSER AUTOMATION FAILS:
+☐ Check Docker memory (need 6-8GB)
+☐ Check Playwright installed: docker-compose exec api npx playwright --version
+☐ Rebuild image: docker-compose build
+☐ Check credentials in config.json
+
+MAINTENANCE CHECKLIST:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+WEEKLY:
+☐ Check disk space
+☐ Review logs for errors
+☐ Verify OAuth token not expired
+
+MONTHLY:
+☐ Update Docker Desktop
+☐ Clear old Docker images: docker image prune -a
+☐ Clear old volumes (if needed): docker volume prune
+
+AFTER CODE UPDATES:
+☐ Run: stop.bat
+☐ Run: docker-compose build
+☐ Run: start.bat
+☐ Verify all services running
+
+BACKUP CHECKLIST:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+BACKUP THESE FILES:
+☐ .env
+☐ config.json
+☐ tokens.json
+☐ docker-compose.yml (if modified)
+
+DO NOT BACKUP:
+☐ node_modules/
+☐ Docker images
+☐ Redis data (unless needed)
+
+PERFORMANCE CHECKLIST:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+DOCKER DESKTOP SETTINGS (Settings > Resources):
+☐ Memory: 6-8GB
+☐ CPUs: 4-6 cores
+☐ Disk: 20GB+
+☐ Swap: 2GB
+
+WINDOWS PERFORMANCE:
+☐ Close unnecessary applications during automation
+☐ Ensure SSD has adequate free space
+☐ Check Windows is not in battery saver mode
+
+SECURITY CHECKLIST:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+☐ .env file not committed to Git
+☐ config.json not committed to Git
+☐ tokens.json not committed to Git
+☐ .gitignore includes sensitive files
+☐ Credentials stored securely
+☐ Docker containers only accessible from localhost
+☐ Regular password rotation for LMS accounts
+
+SUCCESS INDICATORS:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✓ status.bat shows all services "Up"
+✓ http://localhost:8000/test responds
+✓ logs.bat shows activity
+✓ Browser windows open during automation
+✓ Google Sheets get updated
+✓ No error messages in logs
+✓ Redis ping returns PONG
+✓ API health check passes
+
+╔════════════════════════════════════════════════════════════════╗
+║  NEED HELP? Check QUICK_START.md or DEPLOYMENT.md             ║
+╚════════════════════════════════════════════════════════════════╝

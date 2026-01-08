@@ -1,0 +1,171 @@
+version: '3.8'
+
+services:
+  # Redis Service - Queue and Cache Backend
+  redis:
+    image: redis:7-alpine
+    container_name: lms_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks:
+      - lms_network
+
+  # API Server - Main Express Application
+  api:
+    build: .
+    container_name: lms_api
+    restart: unless-stopped
+    command: node server.js
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - MASAI_ASSESS_PLATFORM_URL=https://assess-admin.masaischool.com
+      - MASAI_ADMIN_LMS_URL=https://experience-admin.masaischool.com
+      - PASSWORD_SECRET=Made_by_Murtaza
+      - GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID}
+      - GOOGLE_OAUTH_SECRET_KEY=${GOOGLE_OAUTH_SECRET_KEY}
+      - GOOGLE_OAUTH_REDIRECT_URI=http://localhost:8000/oauth2callback
+    volumes:
+      - ./config.json:/app/config.json
+      - ./tokens.json:/app/tokens.json
+      - ./.env:/app/.env
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - lms_network
+
+  # Assessment Clone Worker
+  clone_worker:
+    build: .
+    container_name: lms_clone_worker
+    restart: unless-stopped
+    command: node ./utils/queues/assessmentCloneRenameQueue.js
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - MASAI_ASSESS_PLATFORM_URL=https://assess-admin.masaischool.com
+      - MASAI_ADMIN_LMS_URL=https://experience-admin.masaischool.com
+      - PASSWORD_SECRET=Made_by_Murtaza
+      - GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID}
+      - GOOGLE_OAUTH_SECRET_KEY=${GOOGLE_OAUTH_SECRET_KEY}
+      - GOOGLE_OAUTH_REDIRECT_URI=http://localhost:8000/oauth2callback
+    volumes:
+      - ./config.json:/app/config.json
+      - ./tokens.json:/app/tokens.json
+      - ./.env:/app/.env
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - lms_network
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+  # Assignment Creation Worker
+  assignment_worker:
+    build: .
+    container_name: lms_assignment_worker
+    restart: unless-stopped
+    command: node ./utils/queues/assignmentCreationQueue.js
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - MASAI_ASSESS_PLATFORM_URL=https://assess-admin.masaischool.com
+      - MASAI_ADMIN_LMS_URL=https://experience-admin.masaischool.com
+      - PASSWORD_SECRET=Made_by_Murtaza
+      - GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID}
+      - GOOGLE_OAUTH_SECRET_KEY=${GOOGLE_OAUTH_SECRET_KEY}
+      - GOOGLE_OAUTH_REDIRECT_URI=http://localhost:8000/oauth2callback
+    volumes:
+      - ./config.json:/app/config.json
+      - ./tokens.json:/app/tokens.json
+      - ./.env:/app/.env
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - lms_network
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+  # Lecture Creation Worker
+  lecture_worker:
+    build: .
+    container_name: lms_lecture_worker
+    restart: unless-stopped
+    command: node ./utils/queues/lectureCreationQueue.js
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - MASAI_ASSESS_PLATFORM_URL=https://assess-admin.masaischool.com
+      - MASAI_ADMIN_LMS_URL=https://experience-admin.masaischool.com
+      - PASSWORD_SECRET=Made_by_Murtaza
+      - GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID}
+      - GOOGLE_OAUTH_SECRET_KEY=${GOOGLE_OAUTH_SECRET_KEY}
+      - GOOGLE_OAUTH_REDIRECT_URI=http://localhost:8000/oauth2callback
+    volumes:
+      - ./config.json:/app/config.json
+      - ./tokens.json:/app/tokens.json
+      - ./.env:/app/.env
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - lms_network
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+  # Notes Update Worker
+  notes_worker:
+    build: .
+    container_name: lms_notes_worker
+    restart: unless-stopped
+    command: node ./utils/queues/notesUpdationQueue.js
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - MASAI_ASSESS_PLATFORM_URL=https://assess-admin.masaischool.com
+      - MASAI_ADMIN_LMS_URL=https://experience-admin.masaischool.com
+      - PASSWORD_SECRET=Made_by_Murtaza
+      - GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID}
+      - GOOGLE_OAUTH_SECRET_KEY=${GOOGLE_OAUTH_SECRET_KEY}
+      - GOOGLE_OAUTH_REDIRECT_URI=http://localhost:8000/oauth2callback
+    volumes:
+      - ./config.json:/app/config.json
+      - ./tokens.json:/app/tokens.json
+      - ./.env:/app/.env
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - lms_network
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+networks:
+  lms_network:
+    driver: bridge
+
+volumes:
+  redis_data:
+    driver: local
