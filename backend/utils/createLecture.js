@@ -241,8 +241,27 @@ export async function createLecture(page, lecture) {
     await page.waitForTimeout(500); 
     console.log({createButton}, "this is the create button")
     await createButton.click();
-    console.log("button hitttttt!!!!!!!!!!!!!!!!!!!")
-    return "Done"
+    console.log("📤 CREATE button clicked, waiting for response...");
+
+    // 🔧 FIX: Wait to verify lecture was actually created
+    try {
+      // Wait for navigation or success indicator
+      await page.waitForTimeout(3000);
+
+      // Check if still on the create form (indicates failure)
+      const stillOnForm = await page.locator('input[placeholder="Enter Title"]').isVisible().catch(() => false);
+
+      if (stillOnForm) {
+        console.error("❌ Lecture creation failed - still on form page");
+        return "Error";
+      }
+
+      console.log(`✅ Lecture created successfully: ${lecture.title}`);
+      return "Done";
+    } catch (err) {
+      console.error(`❌ Error verifying lecture creation: ${err.message}`);
+      return "Error";
+    }
   } catch (err) {
     console.error(
       `❌ Error while creating lecture '${lecture.title}':`,

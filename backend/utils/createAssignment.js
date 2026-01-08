@@ -297,12 +297,27 @@ export async function createAssignment(page, assignment) {
 		await page.waitForTimeout(500);
 		console.log({ createButton }, "this is the create button");
 		await createButton.click();
-		console.log("button hitttttt!!!!!!!!!!!!!!!!!!!");
+		console.log("📤 CREATE button clicked, waiting for response...");
 
-		console.log(
-			`✅ Schedule will end at: ${assignment.endDate} ${assignment.endTime}`
-		);
-		return "Done";
+		// 🔧 FIX: Wait to verify assignment was actually created
+		try {
+			// Wait for navigation or success indicator (adjust timeout as needed)
+			await page.waitForTimeout(3000);
+
+			// Check if still on the create form (indicates failure)
+			const stillOnForm = await page.locator('input[placeholder="Enter Title"]').isVisible().catch(() => false);
+
+			if (stillOnForm) {
+				console.error("❌ Assignment creation failed - still on form page");
+				return "Error";
+			}
+
+			console.log(`✅ Assignment created successfully: ${assignment.title}`);
+			return "Done";
+		} catch (err) {
+			console.error(`❌ Error verifying assignment creation: ${err.message}`);
+			return "Error";
+		}
 	} catch (err) {
 		console.error(
 			`❌ Error while creating assignment '${assignment.title}':`,
