@@ -59,12 +59,12 @@ const notesUpdationWorker = new Worker(
           `🧾 Processing Lecture: ${lec.title}`
         );
 
-        const status = await updateNotes(page, lec);
-        console.log(`📋 updateNotes returned: ${status}`);
-        const isNotesUpdatedValue=status === "Done" ? "yes" : "no"
+        const result = await updateNotes(page, lec);
+        console.log(`📋 updateNotes returned: ${result.status}`);
+        const isNotesUpdatedValue = result.status === "Done" ? "yes" : "no"
         await connection.hset(redisKey, {
           isNotesUpdated: isNotesUpdatedValue,
-          isNotesUpdatedError: status === "Error" ? "Failed To Update" : "",
+          notesUpdateError: result.error || "",
           lastUpdated: new Date().toISOString(),
         });
 

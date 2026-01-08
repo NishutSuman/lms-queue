@@ -309,20 +309,20 @@ export async function createAssignment(page, assignment) {
 
 			if (stillOnForm) {
 				console.error("❌ Assignment creation failed - still on form page");
-				return "Error";
+				return { status: "Error", error: "Assignment creation failed - remained on form after submission. Possible validation error or network issue." };
 			}
 
 			console.log(`✅ Assignment created successfully: ${assignment.title}`);
-			return "Done";
+			return { status: "Done", error: "" };
 		} catch (err) {
 			console.error(`❌ Error verifying assignment creation: ${err.message}`);
-			return "Error";
+			return { status: "Error", error: `Verification failed: ${err.message}` };
 		}
 	} catch (err) {
 		console.error(
 			`❌ Error while creating assignment '${assignment.title}':`,
 			err.message
 		);
-		return "Error";
+		return { status: "Error", error: `Assignment creation failed: ${err.message}` };
 	}
 }

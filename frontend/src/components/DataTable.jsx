@@ -79,6 +79,12 @@ const DataTable = ({ type, refreshKey, setTotalItems }) => {
         notesUpdatedFlag: isTrue(item.isNotesUpdated),
         lectureCreatedFlag: isTrue(item.isLectureCreated),
 
+        // Error messages
+        assessmentCloneError: item.assessmentCloneError || "",
+        assignmentCreationError: item.assignmentCreationError || "",
+        notesUpdateError: item.notesUpdateError || "",
+        lectureCreationError: item.lectureCreationError || "",
+
         // Metadata
         uploadedAt: item.uploadedAt || "N/A",
         lastUpdated: item.lastUpdated || "N/A",
@@ -390,28 +396,47 @@ const DataTable = ({ type, refreshKey, setTotalItems }) => {
   ];
 
   // UI cell renderer
-  const renderToggleCell = (record, field, flag) => (
-    <div
-      style={{
-        backgroundColor: flag ? "#e8f5e9" : "#fde2e2",
-        padding: "5px",
-        borderRadius: "4px",
-        textAlign: "center",
-      }}
-    >
-      {flag ? (
-        "true"
-      ) : (
-        <Button
-          size="small"
-          type="dashed"
-          onClick={() => handleToggle(record, field)}
-        >
-          Mark True
-        </Button>
-      )}
-    </div>
-  );
+  const renderToggleCell = (record, field, flag) => {
+    // Get the error field name
+    const errorFieldMap = {
+      assessmentClone: 'assessmentCloneError',
+      assignmentCreated: 'assignmentCreationError',
+      notesUpdated: 'notesUpdateError',
+      lectureCreated: 'lectureCreationError'
+    };
+    const errorField = errorFieldMap[field];
+    const errorMessage = record[errorField];
+
+    return (
+      <div
+        style={{
+          backgroundColor: flag ? "#e8f5e9" : errorMessage ? "#fff3cd" : "#fde2e2",
+          padding: "5px",
+          borderRadius: "4px",
+          textAlign: "center",
+        }}
+      >
+        {flag ? (
+          "true"
+        ) : errorMessage ? (
+          <div style={{ color: "#856404" }}>
+            <div style={{ fontWeight: "bold", marginBottom: "4px" }}>Error</div>
+            <div style={{ fontSize: "12px", whiteSpace: "pre-wrap", textAlign: "left" }}>
+              {errorMessage}
+            </div>
+          </div>
+        ) : (
+          <Button
+            size="small"
+            type="dashed"
+            onClick={() => handleToggle(record, field)}
+          >
+            Mark True
+          </Button>
+        )}
+      </div>
+    );
+  };
 
   // Final columns
   const columns =

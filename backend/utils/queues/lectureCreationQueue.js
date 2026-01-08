@@ -48,13 +48,14 @@ const lectureWorker = new Worker(
       //////// creation logic
       for(const lec of lectures){
         const redisKey = `lectures:${lec.redisId}`;
-        const status = await createLecture(page,lec);
-        console.log("🚀 ~ from the lecture creation queue status:", status)
-        const isLectureCreatedValue = status === "Done" ? "yes" : "no";
+        const result = await createLecture(page,lec);
+        console.log("🚀 ~ from the lecture creation queue result:", result)
+        const isLectureCreatedValue = result.status === "Done" ? "yes" : "no";
         console.log("🚀 ~ isLectureCreatedValue:", isLectureCreatedValue)
         await connection.hset(redisKey, {
           isNotesUpdated: isLectureCreatedValue,
-          isLectureCreated:isLectureCreatedValue,
+          isLectureCreated: isLectureCreatedValue,
+          lectureCreationError: result.error || "",
           lastUpdated: new Date().toISOString(),
         });
         // Update Sheet
@@ -66,7 +67,7 @@ const lectureWorker = new Worker(
           isLectureCreatedValue
         );
 
-        console.log(`✅ ${lec.title} → ${status}`);
+        console.log(`✅ ${lec.title} → ${result.status}${result.error ? ` (Error: ${result.error})` : ""}`);
 
       }
 

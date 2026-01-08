@@ -253,20 +253,20 @@ export async function createLecture(page, lecture) {
 
       if (stillOnForm) {
         console.error("❌ Lecture creation failed - still on form page");
-        return "Error";
+        return { status: "Error", error: "Lecture creation failed - remained on form after submission. Possible validation error or network issue." };
       }
 
       console.log(`✅ Lecture created successfully: ${lecture.title}`);
-      return "Done";
+      return { status: "Done", error: "" };
     } catch (err) {
       console.error(`❌ Error verifying lecture creation: ${err.message}`);
-      return "Error";
+      return { status: "Error", error: `Verification failed: ${err.message}` };
     }
   } catch (err) {
     console.error(
       `❌ Error while creating lecture '${lecture.title}':`,
       err.message
     );
-    return "Error";
+    return { status: "Error", error: `Lecture creation failed: ${err.message}` };
   }
 }

@@ -63,7 +63,7 @@ const automationWorker = new Worker(
         
         console.log(`🚀 Starting clone for: ${a.assessment_template_name}`);
 
-        const status = await cloneAndEditAssessment(
+        const result = await cloneAndEditAssessment(
           page,
           a.previous_assessment_templateName,
           a.assessment_template_name
@@ -71,9 +71,12 @@ const automationWorker = new Worker(
 
         // Optionally update Redis to track progress
         const redisKey = `assignments:${a.redisId}`;
-        const isClonedValue = status === "Done" ? "yes" : "no";
-        await connection.hset(redisKey, "isCloned", isClonedValue);
-        await connection.hset(redisKey, "lastUpdated", new Date().toISOString());
+        const isClonedValue = result.status === "Done" ? "yes" : "no";
+        await connection.hset(redisKey, {
+          isCloned: isClonedValue,
+          assessmentCloneError: result.error || "",
+          lastUpdated: new Date().toISOString(),
+        });
         // Update Sheet
         await updateSheetCell(
           GOOGLE_SHEET_ID,
@@ -83,7 +86,7 @@ const automationWorker = new Worker(
           isClonedValue
         );
 
-        console.log(`✅ ${a.assessment_template_name} → ${status}`);
+        console.log(`✅ ${a.assessment_template_name} → ${result.status}${result.error ? ` (Error: ${result.error})` : ""}`);
       }
 
       console.log("🎯 All queued assessments processed successfully!");

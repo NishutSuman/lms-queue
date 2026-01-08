@@ -123,12 +123,12 @@ export async function updateNotes(page, lecture) {
 
     await page.waitForTimeout(2000);
     console.log("✅ Notes update process completed for:", lecture.title);
-    return "Done";
+    return { status: "Done", error: "" };
   } catch (err) {
     console.error(
       `❌ Error while updating lecture '${lecture.title}':`,
       err.message
     );
-    return "Error";
+    return { status: "Error", error: `Notes update failed: ${err.message}` };
   }
 }

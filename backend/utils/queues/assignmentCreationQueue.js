@@ -56,11 +56,11 @@ const assignmentWorker = new Worker(
       //////// creation logic
       for(const a of assignments){
         const redisKey = `assignments:${a.redisId}`;
-        const status = await createAssignment(page, a);
-        const isAssignmentCreatedValue = status === "Done" ? "yes" : "no";
+        const result = await createAssignment(page, a);
+        const isAssignmentCreatedValue = result.status === "Done" ? "yes" : "no";
         await connection.hset(redisKey, {
           isAssignmentCreated: isAssignmentCreatedValue,
-          assignmentCreationError: status === "Error" ? "Creation failed" : "",
+          assignmentCreationError: result.error || "",
           lastUpdated: new Date().toISOString(),
         });
         // Update Sheet
@@ -72,7 +72,7 @@ const assignmentWorker = new Worker(
           isAssignmentCreatedValue
         );
 
-        console.log(`✅ ${a.title} → ${status}`);
+        console.log(`✅ ${a.title} → ${result.status}${result.error ? ` (Error: ${result.error})` : ""}`);
       }
       
 

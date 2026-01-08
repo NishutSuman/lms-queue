@@ -68,9 +68,9 @@ export async function cloneAndEditAssessment(page, previousTitle, currentTitle) 
 
     await page.waitForTimeout(2000);
     console.log(`✏️ Renamed clone → "${currentTitle}"`);
-    return "Done";
+    return { status: "Done", error: "" };
   } catch (err) {
     console.error(`❌ Error cloning "${currentTitle}": ${err.message}`);
-    return "Error";
+    return { status: "Error", error: `Clone failed: ${err.message}` };
   }
 }
