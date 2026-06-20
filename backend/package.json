@@ -10,6 +10,8 @@
     "create": "nodemon ./utils/queues/assignmentCreationQueue.js",
     "update": "nodemon ./utils/queues/notesUpdationQueue.js",
     "createLecture": "nodemon ./utils/queues/lectureCreationQueue.js",
+    "cloneLecture": "nodemon ./utils/queues/lectureCloneQueue.js",
+    "cloneAssignment": "nodemon ./utils/queues/assignmentCloneQueue.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {

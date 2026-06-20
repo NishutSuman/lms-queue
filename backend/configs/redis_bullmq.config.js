@@ -18,8 +18,8 @@ export const assessmentCloneRenameQueue = new Queue('assessmentCloneRenameQueue'
 export const assignmentCreationQueue = new Queue('assignmentCreationQueue', { connection });
 export const notesUpdationQueue = new Queue('notesUpdationQueue', { connection });
 export const lectureCreationQueue = new Queue('lectureCreationQueue', { connection });
-// (optional) — if you plan to add more related queues later:
-//export const automationEventsQueue = new Queue('automationEventsQueue', { connection });
+export const lectureCloneQueue = new Queue('lectureCloneQueue', { connection });
+export const assignmentCloneQueue = new Queue('assignmentCloneQueue', { connection });
 
 // 🧩 Just for sanity logs
 console.log('✅ Queues initialized: automationQueue');

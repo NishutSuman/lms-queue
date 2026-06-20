@@ -47,12 +47,13 @@ FOR ASSIGNMENTS:
 ☐ Load data: POST /api/add-data?type=assignments
 ☐ Clone assessments: POST /api/clone-assessment-template
 ☐ Create assignments: POST /api/create-assignments
-☐ Update notes: POST /api/start-update-notes
 ☐ Check status: GET /api/get-automation-status?type=assignments
 
 FOR LECTURES:
 ☐ Load data: POST /api/add-data?type=lectures
 ☐ Create lectures: POST /api/create-lectures
+☐ Update notes on existing lectures: POST /api/start-update-notes
+   (requires lecture_id + notes columns filled in lecture sheet)
 ☐ Check status: GET /api/get-automation-status?type=lectures
 
 DAILY OPERATIONS:

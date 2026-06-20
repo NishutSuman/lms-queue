@@ -10,7 +10,7 @@ const Dashboard = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (type !== "assignments" && type !== "lectures") {
+    if (type !== "assignments" && type !== "lectures" && type !== "notes" && type !== "clone" && type !== "assignmentClone") {
       console.log("Invalid type. Redirecting...");
       navigate("/");
     }
@@ -25,7 +25,7 @@ const Dashboard = () => {
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">
-          {type === "assignments" ? "Assignments" : "Lectures"} Automation
+          {type === "assignments" ? "Assignments" : type === "lectures" ? "Lectures" : type === "notes" ? "Notes" : type === "clone" ? "Clone Lecture" : "Clone Assignment"} Automation
         </h1>
         <div className="text-sm text-gray-500">
           Total {type}: <span className="font-medium">{totalItems}</span>

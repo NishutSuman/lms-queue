@@ -19,21 +19,81 @@ export async function updateNotes(page, lecture) {
       console.log(`🆔 Using provided Lecture ID: ${lecture.lecture_id}`);
       editUrl = `https://experience-admin.masaischool.com/lectures/edit/?id=${Number(lecture.lecture_id)}`;
     } else {
-      console.log("📄 Invalid or missing lecture_id, using fallback search...");
+      console.log("📄 Invalid or missing lecture_id, searching via filters...");
+
       await page.goto(
-        `https://experience-admin.masaischool.com/lectures/?page=0&title=${lecture.title}`,
+        `https://experience-admin.masaischool.com/lectures/`,
         { waitUntil: "domcontentloaded", timeout: 60000 }
       );
       console.log("✅ Navigated to lecture list page");
 
-      await page.waitForSelector("table tbody tr", { timeout: 15000 });
-      const lectureId = await page
-        .locator("table tbody tr:first-child td:first-child")
-        .innerText();
-      if (!lectureId) throw new Error("Lecture ID not found in table");
-      console.log(`🆔 Found lecture ID: ${lectureId}`);
+      // 1. Fill Title input first — it's visible before FILTERS is opened
+      // Use placeholder* (contains) to handle any trailing spaces in the placeholder
+      const titleInput = page.locator('input[placeholder*="Title to search"]');
+      await titleInput.waitFor({ state: "visible", timeout: 15000 });
+      await titleInput.fill(lecture.title);
+      await page.waitForTimeout(500);
+      console.log(`🔤 Filled title: ${lecture.title}`);
 
-      editUrl = `https://experience-admin.masaischool.com/lectures/edit/?id=${lectureId}`;
+      // 2. Open filters panel — always click it, panel is hidden by default
+      const filtersButton = page.locator('button:has-text("FILTERS")');
+      await filtersButton.waitFor({ state: "visible", timeout: 10000 });
+      await filtersButton.click();
+      await page.waitForTimeout(1000);
+      console.log("🔽 Opened filters panel");
+
+      const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+      // Helper: select an option from a React Select dropdown by its label text
+      async function selectReactOption(labelText, value) {
+        // Find label containing the text, then click its react-select control to open dropdown
+        const label = page.locator("label").filter({ hasText: new RegExp(`^${labelText}`) }).first();
+        await label.waitFor({ state: "visible", timeout: 10000 });
+        const control = label.locator(".react-select__control").first();
+        await control.click();
+        await page.waitForTimeout(400);
+        // Type to filter options
+        await page.keyboard.type(value, { delay: 30 });
+        await page.waitForTimeout(600);
+        // Match case-insensitively — LMS may display names in different case than the sheet
+        const option = page.locator(".react-select__option").filter({ hasText: new RegExp(`^${escapeRegex(value)}$`, "i") }).first();
+        await option.waitFor({ state: "visible", timeout: 5000 });
+        await option.click();
+        await page.waitForTimeout(300);
+        console.log(`✅ Selected ${labelText}: ${value}`);
+      }
+
+      // 3. Select Type = live (dropdown value is lowercase)
+      await selectReactOption("Type", "live");
+
+      // 4. Select Batch
+      await selectReactOption("Batch", lecture.batch);
+
+      // 5. Select Section
+      await selectReactOption("Section", lecture.section);
+
+      // 6. Wait for filtered results
+      await page.waitForTimeout(1500);
+      await page.waitForSelector("table tbody tr", { timeout: 15000 });
+
+      const rows = page.locator("table tbody tr");
+      const rowCount = await rows.count();
+      console.log(`🔍 Filter returned ${rowCount} row(s)`);
+
+      if (rowCount === 0) {
+        throw new Error(
+          `No lecture found with title="${lecture.title}", batch="${lecture.batch}", section="${lecture.section}", type="Live".`
+        );
+      }
+
+      // 7. Get ID from first (should be only) result row
+      const matchedId = (await rows.first().locator("td").first().innerText()).trim();
+      if (!matchedId) {
+        throw new Error("Lecture ID not found in the result row.");
+      }
+      console.log(`🆔 Found lecture ID: ${matchedId}`);
+
+      editUrl = `https://experience-admin.masaischool.com/lectures/edit/?id=${matchedId}`;
     }
 
     // Navigate to edit page

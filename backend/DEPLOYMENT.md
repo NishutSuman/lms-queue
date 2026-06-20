@@ -123,7 +123,7 @@ curl -X POST "http://localhost:8000/api/add-data?type=assignments"
 curl -X POST "http://localhost:8000/api/add-data?type=lectures"
 ```
 
-### 2. Process Assignments (3 steps)
+### 2. Process Assignments (2 steps)
 
 ```bash
 # Step 1: Clone assessments
@@ -131,16 +131,16 @@ curl -X POST "http://localhost:8000/api/clone-assessment-template"
 
 # Step 2: Create assignments (wait for cloning to finish)
 curl -X POST "http://localhost:8000/api/create-assignments"
-
-# Step 3: Update notes (wait for assignments to finish)
-curl -X POST "http://localhost:8000/api/start-update-notes"
 ```
 
 ### 3. Process Lectures
 
 ```bash
-# Create lectures
+# Step 1: Create lectures
 curl -X POST "http://localhost:8000/api/create-lectures"
+
+# Step 2: Update notes on existing lectures (fill lecture_id + notes columns in lecture sheet first)
+curl -X POST "http://localhost:8000/api/start-update-notes"
 ```
 
 ### 4. Check Status

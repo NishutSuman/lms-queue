@@ -55,7 +55,7 @@ export default function Home() {
 
         <Row gutter={[24, 24]}>
           {/* Assignments Card */}
-          <Col xs={24} md={12}>
+          <Col xs={24} md={8}>
             <Card
               hoverable
               style={{
@@ -68,8 +68,7 @@ export default function Home() {
             >
               <Title level={4}>Assignments Automation</Title>
               <Paragraph type="secondary">
-                Clone assessments, create assignments, and update notes
-                automatically with a single workflow.
+                Clone assessment templates and create assignments automatically with a single workflow.
               </Paragraph>
 
               <Button
@@ -88,7 +87,7 @@ export default function Home() {
           </Col>
 
           {/* Lectures Card */}
-          <Col xs={24} md={12}>
+          <Col xs={24} md={8}>
             <Card
               hoverable
               style={{
@@ -101,7 +100,7 @@ export default function Home() {
             >
               <Title level={4}>Lectures Automation</Title>
               <Paragraph type="secondary">
-                Automatically creates Lectures and Pre-Reads based on the "lecture" sheet in your CSV file.
+                Automatically create Lectures and Pre-Reads based on the "lecture" sheet in your CSV file.
               </Paragraph>
 
               <Button
@@ -113,6 +112,105 @@ export default function Home() {
                   borderRadius: 8,
                   background: "#10b981",
                   borderColor: "#10b981",
+                }}
+              >
+                Get Started
+              </Button>
+            </Card>
+          </Col>
+
+          {/* Notes Card */}
+          <Col xs={24} md={8}>
+            <Card
+              hoverable
+              style={{
+                borderRadius: 15,
+                boxShadow: "0px 6px 18px rgba(0,0,0,0.06)",
+                transition: "all 0.3s ease",
+              }}
+              bodyStyle={{ padding: 25 }}
+              onClick={() => navigate("/dashboard?type=notes")}
+            >
+              <Title level={4}>Notes Automation</Title>
+              <Paragraph type="secondary">
+                Update notes on existing Live lectures. Uses the "notes" sheet - fill the required data.
+              </Paragraph>
+
+              <Button
+                type="primary"
+                style={{
+                  marginTop: 15,
+                  padding: "0 25px",
+                  height: 40,
+                  borderRadius: 8,
+                  background: "#f59e0b",
+                  borderColor: "#f59e0b",
+                }}
+              >
+                Get Started
+              </Button>
+            </Card>
+          </Col>
+
+          {/* Clone Lecture Card */}
+          <Col xs={24} md={12}>
+            <Card
+              hoverable
+              style={{
+                borderRadius: 15,
+                boxShadow: "0px 6px 18px rgba(0,0,0,0.06)",
+                transition: "all 0.3s ease",
+              }}
+              bodyStyle={{ padding: 25 }}
+              onClick={() => navigate("/dashboard?type=clone")}
+            >
+              <Title level={4}>Clone Lecture</Title>
+              <Paragraph type="secondary">
+                Clone an existing lecture to one or more batches and sections. Uses the "Lecture Clone" sheet.
+              </Paragraph>
+
+              <Button
+                type="primary"
+                style={{
+                  marginTop: 15,
+                  padding: "0 25px",
+                  height: 40,
+                  borderRadius: 8,
+                  background: "#7c3aed",
+                  borderColor: "#7c3aed",
+                }}
+              >
+                Get Started
+              </Button>
+            </Card>
+          </Col>
+
+          {/* Clone Assignment Card */}
+          <Col xs={24} md={12}>
+            <Card
+              hoverable
+              style={{
+                borderRadius: 15,
+                boxShadow: "0px 6px 18px rgba(0,0,0,0.06)",
+                transition: "all 0.3s ease",
+              }}
+              bodyStyle={{ padding: 25 }}
+              onClick={() => navigate("/dashboard?type=assignmentClone")}
+            >
+              <Title level={4}>Clone Assignment</Title>
+              <Paragraph type="secondary">
+                Clone an existing assignment to one or more batches and sections. Uses the "Assignment Clone" sheet.
+              </Paragraph>
+
+              <Button
+                type="primary"
+                style={{
+                  marginTop: 15,
+                  padding: "0 25px",
+                  height: 40,
+                  borderRadius: 8,
+                  background: "#db2777",
+                  borderColor: "#db2777",
                 }}
               >
                 Get Started

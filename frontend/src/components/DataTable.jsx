@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Table, Spin, message, Button, Input, Select, Space, Tag } from "antd";
-import { SearchOutlined, DownloadOutlined, ReloadOutlined } from "@ant-design/icons";
+import { SearchOutlined, DownloadOutlined, ReloadOutlined, ExclamationCircleOutlined } from "@ant-design/icons";
+import ErrorModal from "./ErrorModal";
 
 const { Option } = Select;
 
@@ -13,6 +14,8 @@ const DataTable = ({ type, refreshKey, setTotalItems }) => {
   const [statusFilter, setStatusFilter] = useState("all");
   const [batchFilter, setBatchFilter] = useState("all");
   const [sectionFilter, setSectionFilter] = useState("all");
+  const [errorModalOpen, setErrorModalOpen] = useState(false);
+  const [selectedError, setSelectedError] = useState(null);
 
   const isTrue = (val) => {
     if (val === undefined || val === null) return false;
@@ -39,35 +42,45 @@ const DataTable = ({ type, refreshKey, setTotalItems }) => {
 
       const items = result.data || [];
 
-      const formatted = items.map((item, index) => {
-        // Start with all item fields (this preserves ALL sheet columns)
-        const record = {
-          ...item,
+      // Debug: Log first item to see all available fields
+      if (items.length > 0) {
+        console.log("🔍 First item fields:", Object.keys(items[0]));
+        console.log("🔍 First item sample:", items[0]);
+      }
 
-          // Override/add these specific fields
+      const formatted = items.map((item, index) => {
+        // Preserve ALL fields from item, then add UI-specific fields
+        return {
+          ...item, // This includes ALL sheet columns
+
+          // UI-specific fields
           key: index + 1,
           redisId: item.redisKey,
 
-          // Status fields (added by workers, not in sheet initially)
+          // Status fields (added by workers, already in item but we normalize them)
           assessmentClone: item.isCloned,
           assignmentCreated: item.isAssignmentCreated,
           notesUpdated: item.isNotesUpdated,
           lectureCreated: item.isLectureCreated,
+          lectureCloned: item.isCloned,
+          assignmentCloned: item.isCloned,
 
           // Flags
           assessmentCloneFlag: isTrue(item.isCloned),
           assignmentCreatedFlag: isTrue(item.isAssignmentCreated),
           notesUpdatedFlag: isTrue(item.isNotesUpdated),
           lectureCreatedFlag: isTrue(item.isLectureCreated),
+          lectureClonedFlag: isTrue(item.isCloned),
+          assignmentClonedFlag: isTrue(item.isCloned),
 
           // Error messages (added by workers)
           assessmentCloneError: item.assessmentCloneError || "",
           assignmentCreationError: item.assignmentCreationError || "",
           notesUpdateError: item.notesUpdateError || "",
           lectureCreationError: item.lectureCreationError || "",
+          lectureCloneError: item.lectureCloneError || "",
+          assignmentCloneError: item.assignmentCloneError || "",
         };
-
-        return record;
       });
 
       setData(formatted);
@@ -106,45 +119,66 @@ const DataTable = ({ type, refreshKey, setTotalItems }) => {
           filtered = filtered.filter((item) => item.assessmentCloneFlag);
         } else if (statusFilter === "created") {
           filtered = filtered.filter((item) => item.assignmentCreatedFlag);
-        } else if (statusFilter === "notes") {
-          filtered = filtered.filter((item) => item.notesUpdatedFlag);
         } else if (statusFilter === "pending") {
           filtered = filtered.filter(
-            (item) =>
-              !item.assessmentCloneFlag ||
-              !item.assignmentCreatedFlag ||
-              !item.notesUpdatedFlag
+            (item) => !item.assessmentCloneFlag || !item.assignmentCreatedFlag
           );
         }
-      } else {
+      } else if (type === "lectures") {
         if (statusFilter === "created") {
           filtered = filtered.filter((item) => item.lectureCreatedFlag);
         } else if (statusFilter === "pending") {
           filtered = filtered.filter((item) => !item.lectureCreatedFlag);
+        }
+      } else if (type === "notes") {
+        if (statusFilter === "updated") {
+          filtered = filtered.filter((item) => item.notesUpdatedFlag);
+        } else if (statusFilter === "pending") {
+          filtered = filtered.filter((item) => !item.notesUpdatedFlag);
+        }
+      } else if (type === "clone") {
+        if (statusFilter === "cloned") {
+          filtered = filtered.filter((item) => item.lectureClonedFlag);
+        } else if (statusFilter === "pending") {
+          filtered = filtered.filter((item) => !item.lectureClonedFlag);
+        }
+      } else if (type === "assignmentClone") {
+        if (statusFilter === "cloned") {
+          filtered = filtered.filter((item) => item.assignmentClonedFlag);
+        } else if (statusFilter === "pending") {
+          filtered = filtered.filter((item) => !item.assignmentClonedFlag);
         }
       }
     }
 
     // Batch filter
     if (batchFilter !== "all") {
-      filtered = filtered.filter((item) => item.batch === batchFilter);
+      if (type === "clone" || type === "assignmentClone") {
+        filtered = filtered.filter((item) => item.target_batch === batchFilter);
+      } else {
+        filtered = filtered.filter((item) => item.batch === batchFilter);
+      }
     }
 
     // Section filter
     if (sectionFilter !== "all") {
-      filtered = filtered.filter((item) => item.section === sectionFilter);
+      if (type === "clone" || type === "assignmentClone") {
+        filtered = filtered.filter((item) => item.target_section === sectionFilter);
+      } else {
+        filtered = filtered.filter((item) => item.section === sectionFilter);
+      }
     }
 
     setFilteredData(filtered);
   }, [searchText, statusFilter, batchFilter, sectionFilter, data, type]);
 
   // Get unique batches and sections for filters
-  const uniqueBatches = [...new Set(data.map((item) => item.batch))].filter(
-    (b) => b !== "N/A"
-  );
-  const uniqueSections = [...new Set(data.map((item) => item.section))].filter(
-    (s) => s !== "N/A"
-  );
+  const uniqueBatches = (type === "clone" || type === "assignmentClone")
+    ? [...new Set(data.map((item) => item.target_batch))].filter(Boolean)
+    : [...new Set(data.map((item) => item.batch))].filter((b) => b !== "N/A");
+  const uniqueSections = (type === "clone" || type === "assignmentClone")
+    ? [...new Set(data.map((item) => item.target_section))].filter(Boolean)
+    : [...new Set(data.map((item) => item.section))].filter((s) => s !== "N/A");
 
   // Toggle handler
   const handleToggle = async (record, field) => {
@@ -290,6 +324,16 @@ const DataTable = ({ type, refreshKey, setTotalItems }) => {
     },
   ];
 
+  // Notes-specific columns
+  const notesExtraColumns = [
+    {
+      title: "Lecture ID",
+      dataIndex: "lecture_id",
+      key: "lecture_id",
+      width: 120,
+    },
+  ];
+
   // Lecture-specific columns
   const lectureExtraColumns = [
     {
@@ -329,6 +373,176 @@ const DataTable = ({ type, refreshKey, setTotalItems }) => {
       dataIndex: "startTime",
       key: "startTime",
       width: 120,
+    },
+  ];
+
+  // Clone-specific columns
+  const cloneBaseColumns = [
+    {
+      title: "Row #",
+      dataIndex: "rowIndex",
+      key: "rowIndex",
+      width: 80,
+      fixed: "left",
+    },
+    {
+      title: "Source ID",
+      dataIndex: "source_lecture_id",
+      key: "source_lecture_id",
+      width: 120,
+      fixed: "left",
+    },
+    {
+      title: "Source Title",
+      dataIndex: "source_lecture_title",
+      key: "source_lecture_title",
+      width: 250,
+    },
+    {
+      title: "Target Batch",
+      dataIndex: "target_batch",
+      key: "target_batch",
+      width: 180,
+    },
+    {
+      title: "Target Section",
+      dataIndex: "target_section",
+      key: "target_section",
+      width: 220,
+    },
+    {
+      title: "Target Title",
+      dataIndex: "target_title",
+      key: "target_title",
+      width: 220,
+      render: (val) => val && val.trim() !== "" ? val : <span style={{ color: "#aaa" }}>same as source</span>,
+    },
+    {
+      title: "Associated Lecture",
+      dataIndex: "associated_lecture",
+      key: "associated_lecture",
+      width: 220,
+    },
+    {
+      title: "Start Date",
+      dataIndex: "startDate",
+      key: "startDate",
+      width: 120,
+    },
+    {
+      title: "Start Time",
+      dataIndex: "startTime",
+      key: "startTime",
+      width: 120,
+    },
+    {
+      title: "End Date",
+      dataIndex: "endDate",
+      key: "endDate",
+      width: 120,
+    },
+    {
+      title: "End Time",
+      dataIndex: "endTime",
+      key: "endTime",
+      width: 120,
+    },
+  ];
+
+  const cloneStatusColumns = [
+    {
+      title: "Cloned",
+      dataIndex: "lectureCloned",
+      key: "lectureCloned",
+      width: 130,
+      fixed: "right",
+      render: (_, record) =>
+        renderToggleCell(record, "lectureCloned", record.lectureClonedFlag),
+    },
+  ];
+
+  // Assignment Clone-specific columns
+  const assignmentCloneBaseColumns = [
+    {
+      title: "Row #",
+      dataIndex: "rowIndex",
+      key: "rowIndex",
+      width: 80,
+      fixed: "left",
+    },
+    {
+      title: "Source ID",
+      dataIndex: "source_assignment_id",
+      key: "source_assignment_id",
+      width: 120,
+      fixed: "left",
+    },
+    {
+      title: "Source Title",
+      dataIndex: "source_assignment_title",
+      key: "source_assignment_title",
+      width: 250,
+    },
+    {
+      title: "Target Batch",
+      dataIndex: "target_batch",
+      key: "target_batch",
+      width: 180,
+    },
+    {
+      title: "Target Section",
+      dataIndex: "target_section",
+      key: "target_section",
+      width: 220,
+    },
+    {
+      title: "Target Title",
+      dataIndex: "target_title",
+      key: "target_title",
+      width: 220,
+      render: (val) => val && val.trim() !== "" ? val : <span style={{ color: "#aaa" }}>same as source</span>,
+    },
+    {
+      title: "Associated Lecture",
+      dataIndex: "associated_lecture",
+      key: "associated_lecture",
+      width: 220,
+    },
+    {
+      title: "Start Date",
+      dataIndex: "startDate",
+      key: "startDate",
+      width: 120,
+    },
+    {
+      title: "Start Time",
+      dataIndex: "startTime",
+      key: "startTime",
+      width: 120,
+    },
+    {
+      title: "End Date",
+      dataIndex: "endDate",
+      key: "endDate",
+      width: 120,
+    },
+    {
+      title: "End Time",
+      dataIndex: "endTime",
+      key: "endTime",
+      width: 120,
+    },
+  ];
+
+  const assignmentCloneStatusColumns = [
+    {
+      title: "Cloned",
+      dataIndex: "assignmentCloned",
+      key: "assignmentCloned",
+      width: 130,
+      fixed: "right",
+      render: (_, record) =>
+        renderToggleCell(record, "assignmentCloned", record.assignmentClonedFlag),
     },
   ];
 
@@ -375,6 +589,38 @@ const DataTable = ({ type, refreshKey, setTotalItems }) => {
     },
   ];
 
+  const notesStatusColumns = [
+    {
+      title: "Notes Updated",
+      dataIndex: "notesUpdated",
+      key: "notesUpdated",
+      width: 150,
+      fixed: "right",
+      render: (_, record) =>
+        renderToggleCell(record, "notesUpdated", record.notesUpdatedFlag),
+    },
+  ];
+
+  // Handle error button click
+  const handleShowError = (record, field, errorMessage) => {
+    const taskNameMap = {
+      assessmentClone: 'Assessment Clone',
+      assignmentCreated: 'Assignment Creation',
+      notesUpdated: 'Notes Update',
+      lectureCreated: 'Lecture Creation',
+      lectureCloned: 'Lecture Clone',
+      assignmentCloned: 'Assignment Clone',
+    };
+
+    setSelectedError({
+      rowIndex: record.rowIndex,
+      title: record.title,
+      taskName: taskNameMap[field],
+      errorMessage: errorMessage,
+    });
+    setErrorModalOpen(true);
+  };
+
   // UI cell renderer
   const renderToggleCell = (record, field, flag) => {
     // Get the error field name
@@ -382,7 +628,9 @@ const DataTable = ({ type, refreshKey, setTotalItems }) => {
       assessmentClone: 'assessmentCloneError',
       assignmentCreated: 'assignmentCreationError',
       notesUpdated: 'notesUpdateError',
-      lectureCreated: 'lectureCreationError'
+      lectureCreated: 'lectureCreationError',
+      lectureCloned: 'lectureCloneError',
+      assignmentCloned: 'assignmentCloneError',
     };
     const errorField = errorFieldMap[field];
     const errorMessage = record[errorField];
@@ -399,12 +647,14 @@ const DataTable = ({ type, refreshKey, setTotalItems }) => {
         {flag ? (
           "true"
         ) : errorMessage ? (
-          <div style={{ color: "#856404" }}>
-            <div style={{ fontWeight: "bold", marginBottom: "4px" }}>Error</div>
-            <div style={{ fontSize: "12px", whiteSpace: "pre-wrap", textAlign: "left" }}>
-              {errorMessage}
-            </div>
-          </div>
+          <Button
+            size="small"
+            danger
+            icon={<ExclamationCircleOutlined />}
+            onClick={() => handleShowError(record, field, errorMessage)}
+          >
+            Show Error
+          </Button>
         ) : (
           <Button
             size="small"
@@ -422,7 +672,13 @@ const DataTable = ({ type, refreshKey, setTotalItems }) => {
   const columns =
     type === "assignments"
       ? [...baseColumns, ...assignmentExtraColumns, ...assignmentStatusColumns]
-      : [...baseColumns, ...lectureExtraColumns, ...lectureStatusColumns];
+      : type === "lectures"
+      ? [...baseColumns, ...lectureExtraColumns, ...lectureStatusColumns]
+      : type === "notes"
+      ? [...baseColumns, ...notesExtraColumns, ...notesStatusColumns]
+      : type === "clone"
+      ? [...cloneBaseColumns, ...cloneStatusColumns]
+      : [...assignmentCloneBaseColumns, ...assignmentCloneStatusColumns];
 
   return (
     <div className="p-6 bg-white shadow-sm rounded-lg">
@@ -451,12 +707,22 @@ const DataTable = ({ type, refreshKey, setTotalItems }) => {
                 <>
                   <Option value="cloned">✅ Cloned</Option>
                   <Option value="created">✅ Created</Option>
-                  <Option value="notes">✅ Notes Updated</Option>
+                  <Option value="pending">⏳ Pending</Option>
+                </>
+              ) : type === "lectures" ? (
+                <>
+                  <Option value="created">✅ Created</Option>
+                  <Option value="pending">⏳ Pending</Option>
+                </>
+              ) : type === "notes" ? (
+                <>
+                  <Option value="updated">✅ Notes Updated</Option>
                   <Option value="pending">⏳ Pending</Option>
                 </>
               ) : (
+                // covers both "clone" and "assignmentClone"
                 <>
-                  <Option value="created">✅ Created</Option>
+                  <Option value="cloned">✅ Cloned</Option>
                   <Option value="pending">⏳ Pending</Option>
                 </>
               )}
@@ -536,6 +802,13 @@ const DataTable = ({ type, refreshKey, setTotalItems }) => {
           size="small"
         />
       )}
+
+      {/* Error Modal */}
+      <ErrorModal
+        open={errorModalOpen}
+        onClose={() => setErrorModalOpen(false)}
+        errorData={selectedError}
+      />
     </div>
   );
 };

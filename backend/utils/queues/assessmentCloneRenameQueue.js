@@ -5,6 +5,7 @@ import { connection } from "../../configs/redis_bullmq.config.js";
 import { cloneAndEditAssessment } from "../cloneAndEditAssessment.js";
 import { updateSheetCell } from "../updateSheet.js";
 import { getConfig } from "../getConfig.js";
+import { emitProgress, LogType } from "../progressEmitter.js";
 const { MASAI_ASSESS_PLATFORM_USER_EMAIL, MASAI_ASSESS_PLATFORM_USER_PASSWORD, GOOGLE_SHEET_ID } = getConfig()
 
 
@@ -18,9 +19,34 @@ console.log(`This Queue is Running for Assessment Clone/Rename ✅ (headless: ${
 const automationWorker = new Worker(
   "assessmentCloneRenameQueue",
   async (job) => {
-    const { assignments } = job.data;
+    const { assignments, sessionId } = job.data;
+
+    // Generate sessionId if not provided
+    const currentSessionId = sessionId || `assessment-clone-${Date.now()}`;
+
+    // Emit initial connection and task list
+    emitProgress(currentSessionId, {
+      type: 'log',
+      logType: LogType.INFO,
+      message: `🚀 Starting assessment clone worker with ${assignments?.length || 0} assessments`,
+    });
+
+    emitProgress(currentSessionId, {
+      type: 'tasks_init',
+      tasks: assignments?.map((a, index) => ({
+        id: a.redisId || `task-${index}`,
+        title: a.assessment_template_name || `Assessment ${index + 1}`,
+        status: 'pending',
+      })) || [],
+    });
+
     if (!assignments || assignments.length === 0) {
       console.log("⚠️ No assignments to process. Skipping job.");
+      emitProgress(currentSessionId, {
+        type: 'log',
+        logType: LogType.WARNING,
+        message: "⚠️ No assignments to process.",
+      });
       return;
     }
 
@@ -36,14 +62,34 @@ const automationWorker = new Worker(
     const context = await browser.newContext({ viewport: null });
     const page = await context.newPage();
 
+    // Wait for browser to fully initialize
+    await page.waitForTimeout(2000);
+    console.log("🌐 Browser initialized");
+    emitProgress(currentSessionId, {
+      type: 'log',
+      logType: LogType.INFO,
+      message: "🌐 Browser initialized",
+    });
+
     try {
       console.log("🔐 Logging into Assessment Platform...");
+      emitProgress(currentSessionId, {
+        type: 'log',
+        logType: LogType.INFO,
+        message: "🔐 Logging into Assessment Platform...",
+      });
+
       await page.goto(process.env.MASAI_ASSESS_PLATFORM_URL, { waitUntil: "networkidle" });
       await page.fill('input[type="text"]', MASAI_ASSESS_PLATFORM_USER_EMAIL);
       await page.fill('input[type="password"]', MASAI_ASSESS_PLATFORM_USER_PASSWORD);
       await page.click('button[type="submit"]');
       await page.waitForNavigation({ waitUntil: "networkidle" });
       console.log("✅ Login successful");
+      emitProgress(currentSessionId, {
+        type: 'log',
+        logType: LogType.SUCCESS,
+        message: "✅ Login successful",
+      });
 
       // Select client once
       const modal = page.locator('h2:has-text("Please select a client")').locator("..");
@@ -53,15 +99,67 @@ const automationWorker = new Worker(
       //await dropdown.first().dispatchEvent("change");
       await page.waitForSelector("text=Please select a client", { state: "detached" });
       console.log("✅ Client selected: Masai LMS");
+      emitProgress(currentSessionId, {
+        type: 'log',
+        logType: LogType.SUCCESS,
+        message: "✅ Client selected: Masai LMS",
+      });
+
+      // Wait for browser to stabilize
+      await page.waitForTimeout(2000);
+      console.log("⏳ Browser ready, starting assessment cloning...");
+      emitProgress(currentSessionId, {
+        type: 'log',
+        logType: LogType.INFO,
+        message: "⏳ Browser ready, starting assessment cloning...",
+      });
 
       // Process all assignments sequentially
       for(const a of assignments) {
+        const redisKey = `assignments:${a.redisId}`;
+
+        // Update task status to in_progress
+        emitProgress(currentSessionId, {
+          type: 'task_update',
+          task: {
+            id: a.redisId,
+            title: a.assessment_template_name,
+            status: 'in_progress',
+          },
+        });
+
+        emitProgress(currentSessionId, {
+          type: 'log',
+          logType: LogType.TASK_START,
+          message: `📝 Processing: ${a.assessment_template_name}`,
+        });
+
         if ((a.isCloned || "").toLowerCase() === "yes") {
           console.log(`⏩ Skipping already cloned: ${a.assessment_template_name}`);
+          emitProgress(currentSessionId, {
+            type: 'log',
+            logType: LogType.INFO,
+            message: `⏩ Skipping already cloned: ${a.assessment_template_name}`,
+          });
+
+          emitProgress(currentSessionId, {
+            type: 'task_update',
+            task: {
+              id: a.redisId,
+              title: a.assessment_template_name,
+              status: 'completed',
+              error: null,
+            },
+          });
           continue;
         }
-        
+
         console.log(`🚀 Starting clone for: ${a.assessment_template_name}`);
+        emitProgress(currentSessionId, {
+          type: 'log',
+          logType: LogType.STEP,
+          message: `  → Cloning assessment: ${a.assessment_template_name}`,
+        });
 
         const result = await cloneAndEditAssessment(
           page,
@@ -70,7 +168,6 @@ const automationWorker = new Worker(
         );
 
         // Optionally update Redis to track progress
-        const redisKey = `assignments:${a.redisId}`;
         const isClonedValue = result.status === "Done" ? "yes" : "no";
         await connection.hset(redisKey, {
           isCloned: isClonedValue,
@@ -87,14 +184,64 @@ const automationWorker = new Worker(
         );
 
         console.log(`✅ ${a.assessment_template_name} → ${result.status}${result.error ? ` (Error: ${result.error})` : ""}`);
+
+        // Emit result
+        if (result.status === "Done") {
+          emitProgress(currentSessionId, {
+            type: 'log',
+            logType: LogType.SUCCESS,
+            message: `✅ ${a.assessment_template_name} → Cloned successfully`,
+          });
+
+          emitProgress(currentSessionId, {
+            type: 'task_update',
+            task: {
+              id: a.redisId,
+              title: a.assessment_template_name,
+              status: 'completed',
+              error: null,
+            },
+          });
+        } else {
+          emitProgress(currentSessionId, {
+            type: 'log',
+            logType: LogType.ERROR,
+            message: `❌ ${a.assessment_template_name} → ${result.error}`,
+          });
+
+          emitProgress(currentSessionId, {
+            type: 'task_update',
+            task: {
+              id: a.redisId,
+              title: a.assessment_template_name,
+              status: 'error',
+              error: result.error,
+            },
+          });
+        }
       }
 
       console.log("🎯 All queued assessments processed successfully!");
+      emitProgress(currentSessionId, {
+        type: 'log',
+        logType: LogType.SUCCESS,
+        message: "🎯 All queued assessments processed successfully!",
+      });
     } catch (err) {
       console.error("❌ Worker runtime error:", err.message);
+      emitProgress(currentSessionId, {
+        type: 'log',
+        logType: LogType.ERROR,
+        message: `❌ Worker runtime error: ${err.message}`,
+      });
     } finally {
       await browser.close();
       console.log("🪟 Browser closed.");
+      emitProgress(currentSessionId, {
+        type: 'log',
+        logType: LogType.INFO,
+        message: "🪟 Browser closed.",
+      });
     }
   },
   { connection }

@@ -1,0 +1,453 @@
+import React, { useState, useEffect, useRef } from "react";
+import { Modal, Typography, Badge, Card, Divider } from "antd";
+import {
+  LoadingOutlined,
+  CheckCircleOutlined,
+  CloseCircleOutlined,
+  ClockCircleOutlined,
+  PlayCircleOutlined,
+  MinusOutlined,
+  CloseOutlined,
+} from "@ant-design/icons";
+
+const { Title, Text } = Typography;
+
+const ProgressModal = ({ open, onClose, sessionId, taskType, onMinimize }) => {
+  const [logs, setLogs] = useState([]);
+  const [tasks, setTasks] = useState([]);
+  const [isConnected, setIsConnected] = useState(false);
+  const [connectionError, setConnectionError] = useState(null);
+  const [initialTaskCount, setInitialTaskCount] = useState(0); // Store initial count
+  const terminalRef = useRef(null);
+  const eventSourceRef = useRef(null);
+
+  // Split tasks into current and pending
+  const currentTask = tasks.find(task => task.status === 'in_progress');
+  const pendingTasks = tasks.filter(task => task.status === 'pending');
+  const errorTasks = tasks.filter(task => task.status === 'error');
+
+  // Count tasks
+  const totalTasks = initialTaskCount; // Use stored initial count
+  const completedCount = totalTasks - tasks.length; // Completed = initial - current
+  const remainingTasks = tasks.length; // Remaining = what's still in the list
+
+  // Check if all tasks are done (no in_progress tasks remaining)
+  const hasInProgressTasks = tasks.some(task => task.status === 'in_progress');
+  const allTasksComplete = totalTasks > 0 && !hasInProgressTasks;
+
+  // Auto-scroll terminal to bottom
+  useEffect(() => {
+    if (terminalRef.current) {
+      terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
+    }
+  }, [logs]);
+
+  // Connect to SSE stream
+  useEffect(() => {
+    if (!open || !sessionId) return;
+
+    console.log(`📡 Connecting to progress stream for session: ${sessionId}`);
+
+    // Construct SSE URL - use VITE_API_URL (same as other API calls)
+    const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
+    const baseURL = apiUrl.replace(/\/+$/, ""); // Remove trailing slashes
+    const sseURL = `${baseURL}/api/progress-stream?sessionId=${sessionId}`;
+
+    const eventSource = new EventSource(sseURL);
+    eventSourceRef.current = eventSource;
+
+    eventSource.onopen = () => {
+      console.log("✅ SSE Connection opened");
+      setIsConnected(true);
+      setConnectionError(null);
+    };
+
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        console.log("📨 Received SSE message:", data);
+
+        // Handle different message types
+        if (data.type === "connected") {
+          setLogs((prev) => [
+            ...prev,
+            { type: "info", message: data.message, timestamp: data.timestamp },
+          ]);
+        } else if (data.type === "log") {
+          console.log("📝 Adding log:", data);
+          setLogs((prev) => [...prev, {
+            type: data.logType || "info",
+            message: data.message,
+            timestamp: data.timestamp
+          }]);
+        } else if (data.type === "task_update") {
+          console.log("🔄 Task update:", data.task);
+          setTasks((prev) => {
+            const existing = prev.find((t) => t.id === data.task.id);
+            if (existing) {
+              const updated = prev.map((t) =>
+                t.id === data.task.id ? { ...t, ...data.task } : t
+              );
+              // Remove completed tasks from the list (keep only pending, in_progress, and error)
+              return updated.filter(t => t.status !== 'completed');
+            } else {
+              return [...prev, data.task];
+            }
+          });
+        } else if (data.type === "tasks_init") {
+          console.log("📋 Tasks initialized:", data.tasks);
+          const taskList = data.tasks || [];
+          setTasks(taskList);
+          setInitialTaskCount(taskList.length); // Store initial count
+        } else {
+          console.log("⚠️ Unknown message type:", data.type);
+        }
+      } catch (err) {
+        console.error("❌ Error parsing SSE message:", err);
+      }
+    };
+
+    eventSource.onerror = (err) => {
+      console.error("❌ SSE Connection error:", err);
+      setIsConnected(false);
+      setConnectionError("Connection lost. Please check your network.");
+    };
+
+    // Cleanup on unmount
+    return () => {
+      console.log("🔌 Closing SSE connection");
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+      }
+    };
+  }, [open, sessionId]);
+
+  // Handle modal minimize (keep connection, just hide)
+  const handleMinimize = () => {
+    if (onMinimize) {
+      onMinimize();
+    }
+  };
+
+  // Handle modal close (only when all tasks complete)
+  const handleClose = () => {
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+    }
+    setLogs([]);
+    setTasks([]);
+    setInitialTaskCount(0); // Reset initial count
+    setIsConnected(false);
+    setConnectionError(null);
+    if (onClose) {
+      onClose();
+    }
+  };
+
+  // Get log color based on log type
+  const getLogColor = (type) => {
+    switch (type) {
+      case "info":
+        return "#1890ff";
+      case "success":
+        return "#52c41a";
+      case "error":
+        return "#ff4d4f";
+      case "warning":
+        return "#faad14";
+      default:
+        return "#595959";
+    }
+  };
+
+  // Get task status icon
+  const getTaskStatusIcon = (status) => {
+    switch (status) {
+      case "pending":
+        return <ClockCircleOutlined style={{ color: "#8c8c8c" }} />;
+      case "in_progress":
+        return <LoadingOutlined style={{ color: "#1890ff" }} />;
+      case "completed":
+        return <CheckCircleOutlined style={{ color: "#52c41a" }} />;
+      case "error":
+        return <CloseCircleOutlined style={{ color: "#ff4d4f" }} />;
+      default:
+        return <ClockCircleOutlined style={{ color: "#8c8c8c" }} />;
+    }
+  };
+
+  // Format timestamp
+  const formatTime = (timestamp) => {
+    if (!timestamp) return "";
+    const date = new Date(timestamp);
+    return date.toLocaleTimeString("en-US", { hour12: false });
+  };
+
+  return (
+    <Modal
+      open={open}
+      onCancel={handleMinimize}
+      closeIcon={null}
+      footer={null}
+      width={1200}
+      centered
+      maskClosable={false}
+      title={
+        <div style={{ display: "flex", alignItems: "center", gap: "12px", justifyContent: "space-between", width: "100%" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+            <PlayCircleOutlined style={{ fontSize: "24px", color: "#1890ff" }} />
+            <Title level={4} style={{ margin: 0 }}>
+              Live Progress - {taskType || "Automation"}
+            </Title>
+            {isConnected ? (
+              <Badge status="processing" text="Live" />
+            ) : (
+              <Badge status="default" text="Disconnected" />
+            )}
+            {totalTasks > 0 && (
+              <Text style={{
+                marginLeft: "8px",
+                fontSize: "13px",
+                padding: "2px 10px",
+                backgroundColor: completedCount === totalTasks ? "#f6ffed" : "#e6f7ff",
+                borderRadius: "12px",
+                border: `1px solid ${completedCount === totalTasks ? "#b7eb8f" : "#91d5ff"}`,
+                fontWeight: 500
+              }}>
+                {completedCount}/{totalTasks} Completed
+              </Text>
+            )}
+          </div>
+          <div style={{ display: "flex", gap: "8px" }}>
+            <MinusOutlined
+              onClick={handleMinimize}
+              style={{
+                fontSize: "16px",
+                cursor: "pointer",
+                padding: "6px 10px",
+                borderRadius: "4px",
+                transition: "all 0.2s",
+                border: "1px solid #d9d9d9",
+                backgroundColor: "#fafafa"
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = "#f0f0f0";
+                e.currentTarget.style.borderColor = "#40a9ff";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = "#fafafa";
+                e.currentTarget.style.borderColor = "#d9d9d9";
+              }}
+              title="Minimize"
+            />
+            <CloseOutlined
+              onClick={allTasksComplete ? handleClose : undefined}
+              style={{
+                fontSize: "16px",
+                cursor: allTasksComplete ? "pointer" : "not-allowed",
+                padding: "6px 10px",
+                borderRadius: "4px",
+                transition: "all 0.2s",
+                border: `1px solid ${allTasksComplete ? "#ff4d4f" : "#d9d9d9"}`,
+                backgroundColor: allTasksComplete ? "#fff1f0" : "#f5f5f5",
+                color: allTasksComplete ? "#ff4d4f" : "#bfbfbf",
+                opacity: allTasksComplete ? 1 : 0.5
+              }}
+              onMouseEnter={(e) => {
+                if (allTasksComplete) {
+                  e.currentTarget.style.backgroundColor = "#ffccc7";
+                  e.currentTarget.style.borderColor = "#ff4d4f";
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (allTasksComplete) {
+                  e.currentTarget.style.backgroundColor = "#fff1f0";
+                  e.currentTarget.style.borderColor = "#ff4d4f";
+                }
+              }}
+              title={allTasksComplete ? "Close" : "Complete all tasks to close"}
+            />
+          </div>
+        </div>
+      }
+    >
+      <div style={{ display: "flex", gap: "16px", height: "600px" }}>
+        {/* Left Side - Live Terminal */}
+        <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+          <Text strong style={{ marginBottom: "8px", fontSize: "14px" }}>
+            Live Progress Terminal
+          </Text>
+          <div
+            ref={terminalRef}
+            style={{
+              flex: 1,
+              backgroundColor: "#1e1e1e",
+              borderRadius: "6px",
+              padding: "12px",
+              overflowY: "auto",
+              fontFamily: "Consolas, Monaco, 'Courier New', monospace",
+              fontSize: "13px",
+              lineHeight: "1.6",
+            }}
+          >
+            {connectionError && (
+              <div style={{ color: "#ff4d4f", marginBottom: "8px" }}>
+                ❌ {connectionError}
+              </div>
+            )}
+            {logs.length === 0 && (
+              <div style={{ color: "#8c8c8c" }}>
+                Waiting for progress updates...
+              </div>
+            )}
+            {logs.map((log, index) => (
+              <div
+                key={index}
+                style={{
+                  color: getLogColor(log.type),
+                  marginBottom: "4px",
+                  wordWrap: "break-word",
+                }}
+              >
+                <span style={{ color: "#8c8c8c", marginRight: "8px" }}>
+                  [{formatTime(log.timestamp)}]
+                </span>
+                {log.message}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <Divider type="vertical" style={{ height: "auto", margin: "0" }} />
+
+        {/* Right Side - Task Queue */}
+        <div style={{ width: "400px", display: "flex", flexDirection: "column" }}>
+          <Text strong style={{ marginBottom: "8px", fontSize: "14px" }}>
+            Task Queue
+          </Text>
+          <div
+            style={{
+              flex: 1,
+              overflowY: "auto",
+              paddingRight: "8px",
+            }}
+          >
+            {/* Current Task Section */}
+            {currentTask && (
+              <>
+                <Text type="secondary" style={{ fontSize: "12px", marginBottom: "6px", display: "block" }}>
+                  Currently Running
+                </Text>
+                <Card
+                  size="small"
+                  style={{
+                    marginBottom: "16px",
+                    border: "2px solid #1890ff",
+                    backgroundColor: "#e6f7ff"
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: "8px" }}>
+                    <div style={{ fontSize: "18px", marginTop: "2px" }}>
+                      <LoadingOutlined style={{ color: "#1890ff" }} />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <Text
+                        strong
+                        style={{
+                          fontSize: "13px",
+                          display: "block",
+                          marginBottom: "4px",
+                        }}
+                      >
+                        {currentTask.title}
+                      </Text>
+                      <Text
+                        type="secondary"
+                        style={{ fontSize: "12px", display: "block" }}
+                      >
+                        Status:{" "}
+                        <span style={{ fontWeight: 500, color: "#1890ff" }}>
+                          In Progress
+                        </span>
+                      </Text>
+                    </div>
+                  </div>
+                </Card>
+              </>
+            )}
+
+            {/* Pending Tasks List */}
+            {pendingTasks.length > 0 && (
+              <>
+                <Text type="secondary" style={{ fontSize: "12px", marginBottom: "6px", display: "block" }}>
+                  Pending Tasks ({pendingTasks.length})
+                </Text>
+                {pendingTasks.map((task, index) => (
+                  <Card
+                    key={task.id || index}
+                    size="small"
+                    style={{
+                      marginBottom: "8px",
+                      border: "1px solid #d9d9d9",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <ClockCircleOutlined style={{ color: "#8c8c8c", fontSize: "16px" }} />
+                      <Text style={{ fontSize: "13px" }}>{task.title}</Text>
+                    </div>
+                  </Card>
+                ))}
+              </>
+            )}
+
+            {/* Error Tasks */}
+            {errorTasks.length > 0 && (
+              <>
+                <Text type="secondary" style={{ fontSize: "12px", marginBottom: "6px", marginTop: "12px", display: "block" }}>
+                  Failed Tasks ({errorTasks.length})
+                </Text>
+                {errorTasks.map((task, index) => (
+                  <Card
+                    key={task.id || index}
+                    size="small"
+                    style={{
+                      marginBottom: "8px",
+                      border: "1px solid #ff4d4f",
+                      backgroundColor: "#fff1f0"
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: "8px" }}>
+                      <CloseCircleOutlined style={{ color: "#ff4d4f", fontSize: "16px", marginTop: "2px" }} />
+                      <div style={{ flex: 1 }}>
+                        <Text strong style={{ fontSize: "13px", display: "block", marginBottom: "4px" }}>
+                          {task.title}
+                        </Text>
+                        {task.error && (
+                          <Text
+                            type="danger"
+                            style={{ fontSize: "12px", display: "block" }}
+                          >
+                            {task.error}
+                          </Text>
+                        )}
+                      </div>
+                    </div>
+                  </Card>
+                ))}
+              </>
+            )}
+
+            {/* Empty state */}
+            {!currentTask && pendingTasks.length === 0 && errorTasks.length === 0 && (
+              <Card size="small">
+                <Text type="secondary">No tasks in queue</Text>
+              </Card>
+            )}
+          </div>
+        </div>
+      </div>
+    </Modal>
+  );
+};
+
+export default ProgressModal;

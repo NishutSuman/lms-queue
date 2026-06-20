@@ -1,15 +1,24 @@
 export async function createLecture(page, lecture) {
+  const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+  // Helper function to create detailed error messages
+  const createErrorMessage = (fieldName, fieldValue, errorDetails) => {
+    return `Failed at field: "${fieldName}"\nValue: "${fieldValue}"\nReason: ${errorDetails}`;
+  };
+
   try {
-    console.log(
-      `🚀 Creating lecture: ${lecture.title}`
-    );
-    // let flagForLecture=false
+    console.log(`🚀 Creating lecture: ${lecture.title}`);
+
     // 1️⃣ Go to lectures page
-    await page.goto("https://experience-admin.masaischool.com/lectures/create/", {
-      waitUntil: "domcontentloaded",
-      timeout: 60000,
-    });
-    console.log("📄 Navigated to lecture creating Page");
+    try {
+      await page.goto("https://experience-admin.masaischool.com/lectures/create/", {
+        waitUntil: "domcontentloaded",
+        timeout: 60000,
+      });
+      console.log("📄 Navigated to lecture creating Page");
+    } catch (err) {
+      return { status: "Error", error: "Failed to navigate to Lecture creation page. Please check your internet connection." };
+    }
 
     // 3️⃣ Wait for title input and fill it
     const titleInput = page.locator('input[placeholder="Enter Title"]');
@@ -40,65 +49,104 @@ export async function createLecture(page, lecture) {
     await page.keyboard.press("Enter");
     console.log(`✅ Selected category: ${lecture.category}`);
 
+    //// module
+    const moduleInput = page.locator(
+      "xpath=/html/body/div/div/div/main/form/div[1]/div[1]/div/label[3]/div/div/div[1]/div[2]/input"
+    );
+    await moduleInput.waitFor({ state: "visible", timeout: 10000 });
+    await moduleInput.click({ force: true }); // focus field
+    await moduleInput.fill(lecture.module, { delay: 30 });
+    await page.waitForTimeout(1000);
+    await page.keyboard.press("Enter");
+    console.log(`✅ Selected module: ${lecture.module}`);
+
     ////  tags
     const tagsInput = page.locator(
-      "xpath=/html/body/div/div/div/main/form/div[1]/div[1]/div/label[3]/div/div/div[1]/div/input"
+      "xpath=/html/body/div/div/div/main/form/div[1]/div[1]/div/label[4]/div/div/div[1]/div/input"
     );
     await tagsInput.waitFor({ state: "visible", timeout: 10000 });
     await tagsInput.click({ force: true }); // focus field
     await tagsInput.fill(lecture.tags, { delay: 30 });
     await page.waitForTimeout(1000); 
     await page.keyboard.press("Enter");
+    // TEMP FIX: Tags input traps Tab/keyboard navigation.
+    // Workaround: Shift+Tab back to module, then Tab twice to skip past tags to host name.
+    await page.waitForTimeout(500);
+    await page.keyboard.press("Shift+Tab");
+    await page.waitForTimeout(300);
+    await page.keyboard.press("Tab");
+    await page.waitForTimeout(300);
+    await page.keyboard.press("Tab");
+    await page.waitForTimeout(500);
     console.log(`✅ Selected tags: ${lecture.tags}`);
 
-    // Host name
-    const hostInput = page.locator(
-      "xpath=/html/body/div/div/div/main/form/div[1]/div[1]/div/label[4]/div/div/div[1]/div[2]/input"
-    );
-    await hostInput.waitFor({ state: "visible", timeout: 10000 });
-    await hostInput.click({ force: true }); // focus field
-    await hostInput.fill(lecture.host_name, { delay: 30 });
-    await page.waitForTimeout(1500); 
+    // Host name - focus is already here from Tab navigation above, just type directly
+    await page.keyboard.type(lecture.host_name, { delay: 30 });
+    await page.waitForTimeout(1500);
     await page.keyboard.press("Enter");
     console.log(`✅ Selected Host Name: ${lecture.host_name}`);
 
     /// enter batch
-    const batchInput = page.locator(
-      "xpath=/html/body/div/div/div/main/form/div[1]/div[2]/div/label[1]/div/div/div[1]/div[2]/input"
-    );
-    await batchInput.waitFor({ state: "visible", timeout: 10000 });
-    await batchInput.click({ force: true }); // focus field
-    await batchInput.fill(lecture.batch, { delay: 30 });
-    await page.waitForTimeout(2000);
-    // 🔧 FIX: Click exact match from dropdown instead of pressing Enter
-    const batchOption = page.locator(`div[class*="option"]`).filter({ hasText: new RegExp(`^${lecture.batch}$`) });
-    const batchOptionExists = await batchOption.count();
-    if (batchOptionExists > 0) {
-      await batchOption.first().click();
-    } else {
-      // Fallback: try clicking option with exact text
-      await page.locator(`text="${lecture.batch}"`).first().click();
+    try {
+      const batchInput = page.locator(
+        "xpath=/html/body/div/div/div/main/form/div[1]/div[2]/div/label[1]/div/div/div[1]/div[2]/input"
+      );
+      await batchInput.waitFor({ state: "visible", timeout: 10000 });
+      await batchInput.click({ force: true }); // focus field
+      await batchInput.fill(lecture.batch, { delay: 30 });
+      await page.waitForTimeout(2000);
+
+      // 🔧 FIX: Click exact match from dropdown instead of pressing Enter
+      const batchOption = page.locator(`div[class*="option"]`).filter({ hasText: new RegExp(`^${escapeRegex(lecture.batch)}$`) });
+      const batchOptionExists = await batchOption.count();
+
+      if (batchOptionExists === 0) {
+        throw new Error(`No matching option found in dropdown for the batch name provided.`);
+      }
+
+      await batchOption.first().click({ timeout: 5000 });
+      console.log(`✅ Selected batch: ${lecture.batch}`);
+    } catch (err) {
+      return {
+        status: "Error",
+        error: createErrorMessage(
+          "Batch",
+          lecture.batch,
+          "Batch name not found in the system. Please verify the batch exists and the name matches exactly."
+        )
+      };
     }
-    console.log(`✅ Selected batch: ${lecture.batch}`);
 
     // section -
-    const sectionInput = page.locator(
-      "xpath=/html/body/div/div/div/main/form/div[1]/div[2]/div/label[2]/div/div/div[1]/div[2]/input"
-    );
-    await sectionInput.waitFor({ state: "visible", timeout: 10000 });
-    await sectionInput.click({ force: true }); // focus field
-    await sectionInput.fill(lecture.section, { delay: 30 });
-    await page.waitForTimeout(2000);
-    // 🔧 FIX: Click exact match from dropdown instead of pressing Enter
-    const sectionOption = page.locator(`div[class*="option"]`).filter({ hasText: new RegExp(`^${lecture.section}$`) });
-    const sectionOptionExists = await sectionOption.count();
-    if (sectionOptionExists > 0) {
-      await sectionOption.first().click();
-    } else {
-      // Fallback: try clicking option with exact text
-      await page.locator(`text="${lecture.section}"`).first().click();
+    try {
+      const sectionInput = page.locator(
+        "xpath=/html/body/div/div/div/main/form/div[1]/div[2]/div/label[2]/div/div/div[1]/div[2]/input"
+      );
+      await sectionInput.waitFor({ state: "visible", timeout: 10000 });
+      await sectionInput.click({ force: true }); // focus field
+      await sectionInput.fill(lecture.section, { delay: 30 });
+      await page.waitForTimeout(2000);
+
+      // 🔧 FIX: Click exact match from dropdown instead of pressing Enter
+      const sectionOption = page.locator(`div[class*="option"]`).filter({ hasText: new RegExp(`^${escapeRegex(lecture.section)}$`) });
+      const sectionOptionExists = await sectionOption.count();
+
+      if (sectionOptionExists === 0) {
+        throw new Error(`No matching option found in dropdown for the section name provided.`);
+      }
+
+      await sectionOption.first().click({ timeout: 5000 });
+      console.log(`✅ Selected section: ${lecture.section}`);
+    } catch (err) {
+      return {
+        status: "Error",
+        error: createErrorMessage(
+          "Section",
+          lecture.section,
+          "Section name not found in the system. Please verify the section exists and the name matches exactly."
+        )
+      };
     }
-    console.log(`✅ Selected section: ${lecture.section}`);
 
     // associated lectures -
     if(lecture.associated_lecture){
@@ -110,7 +158,7 @@ export async function createLecture(page, lecture) {
         await page.keyboard.type(lecture.associated_lecture, { delay: 30 });
         await page.waitForTimeout(2000);
         // 🔧 FIX: Click exact match from dropdown instead of pressing Enter
-        const lectureOption = page.locator(`div[class*="option"]`).filter({ hasText: new RegExp(`^${lecture.associated_lecture}$`) });
+        const lectureOption = page.locator(`div[class*="option"]`).filter({ hasText: new RegExp(`^${escapeRegex(lecture.associated_lecture)}(\\s*\\(\\d+\\))?$`) });
         const lectureOptionExists = await lectureOption.count();
         if (lectureOptionExists > 0) {
           await lectureOption.first().click();
@@ -236,7 +284,7 @@ export async function createLecture(page, lecture) {
 
     // Click on the Create Button
     console.log("📚 now it will hit the create button")
-    const createButton = page.locator('button:has-text("CREATE")');
+    const createButton = page.locator('button[type="submit"]:has-text("CREATE")');
     await createButton.waitFor({ state: "visible", timeout: 3000 });
     await page.waitForTimeout(500); 
     console.log({createButton}, "this is the create button")

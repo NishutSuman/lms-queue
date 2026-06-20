@@ -7,6 +7,7 @@ import { google } from "googleapis";
 import { getAuthClient } from "./configs/googleSheetClient.js";
 import { AutomationRouter } from "./routes/automation.routes.js";
 import { ConfigRouter } from "./routes/config.routes.js";
+import { setupProgressSubscriber } from "./utils/progressSubscriber.js";
 
 
 
@@ -51,6 +52,9 @@ app.get("/test", (req, res) => {
 // ✅ Main API routes
 app.use("/api", AutomationRouter);
 app.use("/config", ConfigRouter);
+
+// Set up Redis subscriber for progress events from workers
+setupProgressSubscriber();
 
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);

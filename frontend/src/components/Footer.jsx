@@ -11,14 +11,14 @@ const Footer = () => {
       <Text>
         Built with ❤️ by{" "}
         <span className="font-semibold text-gray-800">
-          Mohd Murtaza
+          Nishut Suman
         </span>
       </Text>
 
       {/* Social Icons */}
       <div size="large" className="text-xl flex gap-2">
         <a
-          href="https://github.com/mohd-murtaza"
+          href="https://github.com/nishutsuman"
           target="_blank"
           rel="noopener noreferrer"
         >

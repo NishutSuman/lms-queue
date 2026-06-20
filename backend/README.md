@@ -34,12 +34,15 @@ Automated content management system for Learning Management Systems using browse
 
 ## 🎯 What It Does
 
-Automates three main workflows:
+Automates two main workflows:
 
-1. **Assessment Cloning** - Clone and customize assessment templates
+**Assignments:**
+1. **Assessment Cloning** - Clone and rename assessment templates
 2. **Assignment Creation** - Create assignments in LMS
+
+**Lectures:**
 3. **Lecture Creation** - Create lecture entries with materials
-4. **Notes Updates** - Update notes for existing content
+4. **Notes Updates** - Update notes on existing lectures (uses `lecture_id` + `notes` columns from lecture sheet)
 
 ## 🏗️ Architecture
 
@@ -224,7 +227,7 @@ lms_automations_backend/
 
 ## 🎓 Workflow Example
 
-### Complete Assignment Automation
+### Assignment Automation
 
 1. **Load data from Google Sheets**
    ```bash
@@ -241,14 +244,31 @@ lms_automations_backend/
    POST /api/create-assignments
    ```
 
-4. **Update notes** (after assignments complete)
+4. **Verify status**
+   ```bash
+   GET /api/get-automation-status?type=assignments
+   ```
+
+### Lecture Automation
+
+1. **Load data from Google Sheets**
+   ```bash
+   POST /api/add-data?type=lectures
+   ```
+
+2. **Create lectures**
+   ```bash
+   POST /api/create-lectures
+   ```
+
+3. **Update notes on existing lectures** *(fill `lecture_id` + `notes` in lecture sheet first)*
    ```bash
    POST /api/start-update-notes
    ```
 
-5. **Verify status**
+4. **Verify status**
    ```bash
-   GET /api/get-automation-status?type=assignments
+   GET /api/get-automation-status?type=lectures
    ```
 
 ## ⚙️ System Requirements

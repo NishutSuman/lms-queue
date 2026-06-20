@@ -2,55 +2,58 @@ import { Worker } from "bullmq";
 import { chromium } from "playwright";
 import dotenv from "dotenv";
 import { connection } from "../../configs/redis_bullmq.config.js";
-import { updateNotes } from "../notesUpdation.js";
+import { cloneAssignment } from "../cloneAssignment.js";
 import { updateSheetCell } from "../updateSheet.js";
 import { getConfig } from "../getConfig.js";
 import { emitProgress, LogType } from "../progressEmitter.js";
-const { MASAI_ADMIN_LMS_USER_EMAIL, MASAI_ADMIN_LMS_USER_PASSWORD, GOOGLE_SHEET_ID} = getConfig()
+
 dotenv.config();
 
-// Use HEADLESS=false for local debugging, defaults to true for Docker
+const {
+  MASAI_ADMIN_LMS_USER_EMAIL,
+  MASAI_ADMIN_LMS_USER_PASSWORD,
+  GOOGLE_SHEET_ID
+} = getConfig();
+
 const isHeadless = process.env.HEADLESS !== 'false';
-console.log(`This Queue is Running for Notes Updation ✅ (headless: ${isHeadless})`);
 
-const notesUpdationWorker = new Worker(
-  "notesUpdationQueue",
+console.log(`Assignment Clone Queue Running ✅ (headless: ${isHeadless})`);
+
+const assignmentCloneWorker = new Worker(
+  "assignmentCloneQueue",
   async (job) => {
-    const { lectures, sessionId } = job.data;
-
-    const currentSessionId = sessionId || `notes-update-${Date.now()}`;
+    const { assignments, sessionId } = job.data;
+    const currentSessionId = sessionId || `assignment-clone-${Date.now()}`;
 
     emitProgress(currentSessionId, {
       type: 'log',
       logType: LogType.INFO,
-      message: `🚀 Starting notes updation worker with ${lectures?.length || 0} lectures`,
+      message: `🚀 Starting assignment clone worker with ${assignments?.length || 0} assignments`,
     });
 
     emitProgress(currentSessionId, {
       type: 'tasks_init',
-      tasks: lectures?.map((l, index) => ({
-        id: l.redisId || `task-${index}`,
-        title: l.title || `Lecture ${index + 1}`,
+      tasks: assignments?.map((a, index) => ({
+        id: a.redisId || `task-${index}`,
+        title: `${a.source_assignment_id} → ${a.target_batch} / ${a.target_section}`,
         status: 'pending',
       })) || [],
     });
 
-    if (!lectures || lectures.length === 0) {
-      console.log("⚠️ No lectures to process.");
+    if (!assignments || assignments.length === 0) {
       emitProgress(currentSessionId, {
         type: 'log',
         logType: LogType.WARNING,
-        message: "⚠️ No lectures to process.",
+        message: "⚠️ No assignments found to process.",
       });
       return;
     }
 
-    // 🧭 Launch browser once
     const browser = await chromium.launch({
       headless: isHeadless,
       slowMo: 100,
       args: isHeadless
-        ? ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
+        ? ["--no-sandbox", "--disable-setuid-sandbox"]
         : ["--start-maximized"],
     });
 
@@ -58,7 +61,6 @@ const notesUpdationWorker = new Worker(
     const page = await context.newPage();
 
     await page.waitForTimeout(2000);
-    console.log("🌐 Browser initialized");
     emitProgress(currentSessionId, {
       type: 'log',
       logType: LogType.INFO,
@@ -66,21 +68,18 @@ const notesUpdationWorker = new Worker(
     });
 
     try {
-      console.log("🔐 Logging into LMS...");
       emitProgress(currentSessionId, {
         type: 'log',
         logType: LogType.INFO,
-        message: "🔐 Logging into LMS...",
+        message: "🔐 Logging into Masai Admin LMS Platform...",
       });
 
-      await page.goto(process.env.MASAI_ADMIN_LMS_URL, {
-        waitUntil: "networkidle",
-      });
+      await page.goto(process.env.MASAI_ADMIN_LMS_URL, { waitUntil: "networkidle" });
       await page.fill('input[type="email"]', MASAI_ADMIN_LMS_USER_EMAIL);
       await page.fill('input[type="password"]', MASAI_ADMIN_LMS_USER_PASSWORD);
       await page.click('button[type="submit"]');
       await page.waitForNavigation({ waitUntil: "networkidle" });
-      console.log("✅ LMS Login successful");
+
       emitProgress(currentSessionId, {
         type: 'log',
         logType: LogType.SUCCESS,
@@ -91,17 +90,18 @@ const notesUpdationWorker = new Worker(
       emitProgress(currentSessionId, {
         type: 'log',
         logType: LogType.INFO,
-        message: "⏳ Browser ready, starting notes updation...",
+        message: "⏳ Browser ready, starting assignment cloning...",
       });
 
-      for (const lec of lectures) {
-        const redisKey = `notes:${lec.redisId}`;
+      for (const asn of assignments) {
+        const redisKey = `assignmentClone:${asn.redisId}`;
+        const taskTitle = `${asn.source_assignment_id} → ${asn.target_batch} / ${asn.target_section}`;
 
         emitProgress(currentSessionId, {
           type: 'task_update',
           task: {
-            id: lec.redisId,
-            title: lec.title,
+            id: asn.redisId,
+            title: taskTitle,
             status: 'in_progress',
           },
         });
@@ -109,47 +109,38 @@ const notesUpdationWorker = new Worker(
         emitProgress(currentSessionId, {
           type: 'log',
           logType: LogType.TASK_START,
-          message: `📝 Processing: ${lec.title}`,
+          message: `📝 Processing: ${taskTitle}`,
         });
 
-        emitProgress(currentSessionId, {
-          type: 'log',
-          logType: LogType.STEP,
-          message: `  → Updating notes: ${lec.title}`,
-        });
-
-        const result = await updateNotes(page, lec);
-        console.log(`📋 updateNotes returned: ${result.status}`);
-
-        const isNotesUpdatedValue = result.status === "Done" ? "yes" : "no";
+        const result = await cloneAssignment(page, asn);
+        const isClonedValue = result.status === "Done" ? "yes" : "no";
 
         await connection.hset(redisKey, {
-          isNotesUpdated: isNotesUpdatedValue,
-          notesUpdateError: result.error || "",
-          lastUpdated: new Date().toISOString(),
+          isCloned: isClonedValue,
+          error: result.error || "",
+          updatedAt: new Date().toISOString(),
         });
 
         await updateSheetCell(
           GOOGLE_SHEET_ID,
-          "notes",
-          lec.redisId,
-          "isNotesUpdated",
-          isNotesUpdatedValue
+          "Assignment Clone",
+          asn.redisId,
+          "isCloned",
+          isClonedValue
         );
-
-        console.log(`✅ ${lec.title} → ${isNotesUpdatedValue}`);
 
         if (result.status === "Done") {
           emitProgress(currentSessionId, {
             type: 'log',
             logType: LogType.SUCCESS,
-            message: `✅ ${lec.title} → Notes updated successfully`,
+            message: `✅ ${taskTitle} → Cloned successfully`,
           });
+
           emitProgress(currentSessionId, {
             type: 'task_update',
             task: {
-              id: lec.redisId,
-              title: lec.title,
+              id: asn.redisId,
+              title: taskTitle,
               status: 'completed',
               error: null,
             },
@@ -158,28 +149,31 @@ const notesUpdationWorker = new Worker(
           emitProgress(currentSessionId, {
             type: 'log',
             logType: LogType.ERROR,
-            message: `❌ ${lec.title} → ${result.error}`,
+            message: `❌ ${taskTitle} → ${result.error}`,
           });
+
           emitProgress(currentSessionId, {
             type: 'task_update',
             task: {
-              id: lec.redisId,
-              title: lec.title,
+              id: asn.redisId,
+              title: taskTitle,
               status: 'error',
               error: result.error,
             },
           });
         }
+
+        console.log(`📋 ${asn.source_assignment_id} → ${isClonedValue}`);
       }
 
-      console.log("🎯 All lectures processed successfully!");
       emitProgress(currentSessionId, {
         type: 'log',
         logType: LogType.SUCCESS,
-        message: "🎯 All lectures processed successfully!",
+        message: "🎯 All queued assignments processed successfully!",
       });
+
     } catch (err) {
-      console.error("❌ Worker runtime error:", err.message);
+      console.error("❌ Worker error:", err.message);
       emitProgress(currentSessionId, {
         type: 'log',
         logType: LogType.ERROR,
@@ -187,7 +181,6 @@ const notesUpdationWorker = new Worker(
       });
     } finally {
       await browser.close();
-      console.log("🪟 Browser closed.");
       emitProgress(currentSessionId, {
         type: 'log',
         logType: LogType.INFO,

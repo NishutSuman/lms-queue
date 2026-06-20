@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Button, message } from "antd";
 import ValidationModal from "./ValidationModal";
+import ProgressModal from "./ProgressModal";
 
 const ActionButtons = ({
   type,
@@ -11,6 +12,11 @@ const ActionButtons = ({
   const apiUrl = import.meta.env.VITE_API_URL;
   const [validationModalOpen, setValidationModalOpen] = useState(false);
   const [validationData, setValidationData] = useState(null);
+  const [progressModalOpen, setProgressModalOpen] = useState(false);
+  const [progressSessionId, setProgressSessionId] = useState(null);
+  const [progressTaskType, setProgressTaskType] = useState("");
+  const [progressTotal, setProgressTotal] = useState(0);
+  const [hasActiveProgress, setHasActiveProgress] = useState(false);
 
   // Build endpoint: ensure no double slashes
   const buildUrl = (path) => `${apiUrl.replace(/\/+$/, "")}/api${path}?type=${type}`;
@@ -54,10 +60,27 @@ const ActionButtons = ({
       const data = await response.json().catch(() => ({}));
       console.log("🚀 ~ handleApiRequest ~ data:", data)
 
-      message.success({
-        content: data.message || `${actionName} completed successfully!`,
-        key: actionName,
-      });
+      // Check if response contains sessionId (indicates live progress available)
+      if (data.sessionId) {
+        message.destroy(actionName);
+        message.info({
+          content: "Opening live progress monitor...",
+          key: actionName,
+          duration: 2,
+        });
+
+        // Open progress modal
+        setProgressSessionId(data.sessionId);
+        setProgressTaskType(actionName);
+        setProgressTotal(data.total || 0);
+        setProgressModalOpen(true);
+        setHasActiveProgress(true);
+      } else {
+        message.success({
+          content: data.message || `${actionName} completed successfully!`,
+          key: actionName,
+        });
+      }
 
       onRefresh();
     } catch (error) {
@@ -73,6 +96,22 @@ const ActionButtons = ({
 
   return (
     <div className="flex flex-wrap gap-4 justify-center items-center p-6 bg-white shadow-sm rounded-lg">
+      {/* Show Progress Button - Only visible when there's active progress */}
+      {hasActiveProgress && !progressModalOpen && (
+        <Button
+          type="primary"
+          ghost
+          onClick={() => setProgressModalOpen(true)}
+          style={{
+            borderColor: "#52c41a",
+            color: "#52c41a",
+            fontWeight: 500
+          }}
+        >
+          📊 Show Progress
+        </Button>
+      )}
+
       <Button
         type="primary"
         loading={loadingAction === "Upload data from CSV"}
@@ -115,20 +154,6 @@ const ActionButtons = ({
           >
             Create Assignment
           </Button>
-
-          <Button
-            type="dashed"
-            loading={loadingAction === "Update Notes"}
-            onClick={() =>
-              handleApiRequest(
-                buildUrl("/start-update-notes"),
-                "Update Notes",
-                "POST"
-              )
-            }
-          >
-            Update Notes
-          </Button>
         </>
       )}
 
@@ -146,6 +171,61 @@ const ActionButtons = ({
             }
           >
             Create Lecture
+          </Button>
+        </>
+      )}
+
+      {/* For notes */}
+      {type === "notes" && (
+        <>
+          <Button
+            type="dashed"
+            loading={loadingAction === "Update Notes"}
+            onClick={() =>
+              handleApiRequest(
+                `${apiUrl.replace(/\/+$/, "")}/api/start-update-notes`,
+                "Update Notes",
+                "POST"
+              )
+            }
+          >
+            Update Notes
+          </Button>
+        </>
+      )}
+
+      {/* For clone */}
+      {type === "clone" && (
+        <>
+          <Button
+            loading={loadingAction === "Clone Lectures"}
+            onClick={() =>
+              handleApiRequest(
+                `${apiUrl.replace(/\/+$/, "")}/api/start-clone-lectures`,
+                "Clone Lectures",
+                "POST"
+              )
+            }
+          >
+            Clone Lectures
+          </Button>
+        </>
+      )}
+
+      {/* For assignmentClone */}
+      {type === "assignmentClone" && (
+        <>
+          <Button
+            loading={loadingAction === "Clone Assignments"}
+            onClick={() =>
+              handleApiRequest(
+                `${apiUrl.replace(/\/+$/, "")}/api/start-clone-assignments`,
+                "Clone Assignments",
+                "POST"
+              )
+            }
+          >
+            Clone Assignments
           </Button>
         </>
       )}
@@ -170,6 +250,23 @@ const ActionButtons = ({
         open={validationModalOpen}
         onClose={() => setValidationModalOpen(false)}
         validationData={validationData}
+      />
+
+      {/* Progress Modal */}
+      <ProgressModal
+        open={progressModalOpen}
+        onMinimize={() => {
+          setProgressModalOpen(false);
+        }}
+        onClose={() => {
+          setProgressModalOpen(false);
+          setHasActiveProgress(false);
+          setProgressTotal(0);
+          onRefresh();
+        }}
+        sessionId={progressSessionId}
+        taskType={progressTaskType}
+        initialTotal={progressTotal}
       />
     </div>
   );

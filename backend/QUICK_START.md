@@ -90,7 +90,7 @@ Invoke-WebRequest -Method POST "http://localhost:8000/api/add-data?type=assignme
 Invoke-WebRequest -Method POST "http://localhost:8000/api/add-data?type=lectures"
 ```
 
-#### Process Assignments (3-step workflow)
+#### Process Assignments (2-step workflow)
 
 ```powershell
 # Step 1: Clone assessments
@@ -98,16 +98,16 @@ Invoke-WebRequest -Method POST "http://localhost:8000/api/clone-assessment-templ
 
 # Step 2: Create assignments (after cloning finishes)
 Invoke-WebRequest -Method POST "http://localhost:8000/api/create-assignments"
-
-# Step 3: Update notes (after assignments finish)
-Invoke-WebRequest -Method POST "http://localhost:8000/api/start-update-notes"
 ```
 
 #### Process Lectures
 
 ```powershell
-# Create lectures
+# Step 1: Create lectures
 Invoke-WebRequest -Method POST "http://localhost:8000/api/create-lectures"
+
+# Step 2: Update notes on existing lectures (fill lecture_id + notes columns first)
+Invoke-WebRequest -Method POST "http://localhost:8000/api/start-update-notes"
 ```
 
 #### Check Status
@@ -133,7 +133,7 @@ Import these endpoints:
 | POST | `http://localhost:8000/api/clone-assessment-template` | Clone assessments |
 | POST | `http://localhost:8000/api/create-assignments` | Create assignments |
 | POST | `http://localhost:8000/api/create-lectures` | Create lectures |
-| POST | `http://localhost:8000/api/start-update-notes` | Update notes |
+| POST | `http://localhost:8000/api/start-update-notes` | Update notes on existing lectures |
 | GET | `http://localhost:8000/api/get-automation-status?type=assignments` | Check status |
 | GET | `http://localhost:8000/api/get-automation-status?type=lectures` | Check status |
 
@@ -161,12 +161,7 @@ Import these endpoints:
    ```
    - Wait until complete
 
-4. **Update notes:**
-   ```powershell
-   Invoke-WebRequest -Method POST "http://localhost:8000/api/start-update-notes"
-   ```
-
-5. **Check final status:**
+4. **Check final status:**
    ```powershell
    Invoke-WebRequest "http://localhost:8000/api/get-automation-status?type=assignments"
    ```
@@ -182,11 +177,75 @@ Import these endpoints:
    ```powershell
    Invoke-WebRequest -Method POST "http://localhost:8000/api/create-lectures"
    ```
+   - Wait until complete
 
-3. **Check status:**
+3. **Update notes on existing lectures** *(optional — fill `lecture_id` and `notes` columns first)*:
+   ```powershell
+   Invoke-WebRequest -Method POST "http://localhost:8000/api/start-update-notes"
+   ```
+   - Finds each lecture on LMS by `lecture_id`, opens edit page, pastes notes
+   - Skips lectures where `isNotesUpdated` is already `yes`
+
+4. **Check status:**
    ```powershell
    Invoke-WebRequest "http://localhost:8000/api/get-automation-status?type=lectures"
    ```
+
+---
+
+## 📋 Google Sheet Column Reference
+
+### Assignment Sheet (`assignment` tab)
+
+| Column | Required | Description |
+|--------|----------|-------------|
+| `title` | ✅ | Assignment title |
+| `type` | ✅ | Assignment / Practice / Evaluation |
+| `category` | ✅ | DSA / Coding / etc. |
+| `module` | ✅ | Module name |
+| `tags` | ✅ | Comma-separated tags |
+| `platforms` | ✅ | LMS / Assess / etc. |
+| `assess_client` | ✅ | Masai LMS / Masai One / etc. |
+| `assessment_template_name` | ✅ | New name for cloned assessment |
+| `previous_assessment_templateName` | ✅ | Source template to clone from |
+| `batch` | ✅ | Batch name |
+| `section` | ✅ | Section name (must match exactly) |
+| `associated_lecture` | ❌ | Linked lecture title (optional) |
+| `startDate` | ✅ | DD/MM/YYYY or DD-MM-YYYY or YYYY-MM-DD |
+| `startTime` | ✅ | HH:MM (24-hour) |
+| `endDate` | ✅ | DD/MM/YYYY or DD-MM-YYYY or YYYY-MM-DD |
+| `endTime` | ✅ | HH:MM (24-hour) |
+| `showScore` | ❌ | yes / no (optional) |
+| `instruction` | ❌ | Assignment instructions (optional) |
+| `redisId` | auto | Written by system — do not fill |
+| `isCloned` | auto | yes / no — written by system |
+| `isAssignmentCreated` | auto | yes / no — written by system |
+| `assessmentCloneError` | auto | Error details — written by system |
+| `assignmentCreationError` | auto | Error details — written by system |
+
+### Lecture Sheet (`lecture` tab)
+
+| Column | Required | Description |
+|--------|----------|-------------|
+| `title` | ✅ | Lecture title |
+| `type` | ✅ | Lecture / Tutorial / etc. |
+| `category` | ✅ | DSA / Coding / etc. |
+| `module` | ✅ | Module name |
+| `tags` | ✅ | Comma-separated tags |
+| `host_name` | ✅ | Instructor name |
+| `batch` | ✅ | Batch name |
+| `section` | ✅ | Section name (must match exactly) |
+| `associated_lecture` | ❌ | Linked lecture title (optional) |
+| `startDate` | ✅ | DD/MM/YYYY or DD-MM-YYYY or YYYY-MM-DD |
+| `startTime` | ✅ | HH:MM (24-hour) |
+| `lecture_id` | ✅* | LMS ID of existing lecture — needed for Update Notes |
+| `notes` | ✅* | Notes content to paste — needed for Update Notes |
+| `redisId` | auto | Written by system — do not fill |
+| `isLectureCreated` | auto | yes / no — written by system |
+| `isNotesUpdated` | auto | yes / no — written by system |
+| `lectureCreationError` | auto | Error details — written by system |
+
+> ✅* = Required only when using the **Update Notes** feature
 
 ---
 

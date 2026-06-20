@@ -81,24 +81,35 @@ export const getAuthClient = () => {
 
   const oAuth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI);
 
+  // If we have valid access token, use it
   if (tokens && tokens.expiry_date > Date.now()) {
     oAuth2Client.setCredentials(tokens);
     console.log("✅ Using saved access token");
     return oAuth2Client;
   }
 
-  // if (tokens && tokens.refresh_token) {
-  //   oAuth2Client.setCredentials(tokens);
-  //   console.log("♻️ Access token expired, refreshing...");
-  //  //open(authUrl);
-  //  // return oAuth2Client;
-  //  return null
-  // }
+  // If access token expired but we have refresh_token, refresh automatically
+  if (tokens && tokens.refresh_token) {
+    oAuth2Client.setCredentials(tokens);
+    console.log("♻️ Access token expired, will auto-refresh on next API call");
 
-  // No valid tokens → prompt user
+    // Set up automatic token refresh handler
+    oAuth2Client.on('tokens', (newTokens) => {
+      console.log("🔄 Tokens refreshed automatically");
+      // Merge new tokens with existing refresh_token
+      const updatedTokens = { ...tokens, ...newTokens };
+      fs.writeFileSync(TOKEN_PATH, JSON.stringify(updatedTokens, null, 2));
+      console.log("💾 Updated tokens saved to tokens.json");
+    });
+
+    return oAuth2Client;
+  }
+
+  // No valid tokens → prompt user for OAuth consent
   console.log("⚠️ No valid tokens, please authenticate");
   const authUrl = oAuth2Client.generateAuthUrl({
     access_type: "offline",
+    prompt: "consent", // Force consent screen to get refresh_token
     scope: [
       "https://www.googleapis.com/auth/spreadsheets",
       "https://www.googleapis.com/auth/presentations.readonly",

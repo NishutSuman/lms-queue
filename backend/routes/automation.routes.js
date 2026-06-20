@@ -2,12 +2,26 @@ import express from "express";
 import dotenv from "dotenv";
 import { v4 as uuidv4 } from "uuid";
 import { getSheetsClient } from "../configs/googleSheetClient.js";
-import { assessmentCloneRenameQueue, assignmentCreationQueue, connection, notesUpdationQueue, lectureCreationQueue} from "../configs/redis_bullmq.config.js";
+import { assessmentCloneRenameQueue, assignmentCreationQueue, connection, notesUpdationQueue, lectureCreationQueue, lectureCloneQueue, assignmentCloneQueue } from "../configs/redis_bullmq.config.js";
 import { getConfig } from "../utils/getConfig.js";
-import { validateAssignmentsBatch, validateLecturesBatch, checkDuplicateTitles } from "../utils/validation.js";
+import { validateAssignmentsBatch, validateLecturesBatch, validateNotesBatch, validateCloneBatch, validateAssignmentCloneBatch, checkDuplicateTitles } from "../utils/validation.js";
+import { formatErrorMessage } from "../utils/errorMessageFormatter.js";
+import { progressEmitter } from "../utils/progressEmitter.js";
 const { GOOGLE_SHEET_ID } = getConfig();
 
+// Helper function to get ALL Redis hash fields (including empty values)
+// This fixes the bug in older ioredis where hgetall() skips empty string values
+async function getAllHashFields(key) {
+  const fields = await connection.hkeys(key);
+  if (!fields || fields.length === 0) return {};
 
+  const values = await connection.hmget(key, ...fields);
+  const data = {};
+  fields.forEach((field, index) => {
+    data[field] = values[index] || "";
+  });
+  return data;
+}
 
 export const AutomationRouter = express.Router();
 
@@ -18,14 +32,14 @@ AutomationRouter.post("/add-data", async (req, res) => {
       return res.status(400).json({ message: "Missing ?type=assignments|lectures" });
     }
 
-    const validTypes = ["assignments", "lectures"];
+    const validTypes = ["assignments", "lectures", "notes", "clone", "assignmentClone"];
     if (!validTypes.includes(type)) {
       return res.status(400).json({
-        message: "Invalid type. Use assignments or lectures."
+        message: "Invalid type. Use assignments, lectures, notes, clone, or assignmentClone."
       });
     }
 
-    const sheetName = type === "assignments" ? "assignment" : "lecture";
+    const sheetName = type === "assignments" ? "assignment" : type === "lectures" ? "lecture" : type === "notes" ? "notes" : type === "clone" ? "Lecture Clone" : "Assignment Clone";
 
     console.log(`📄 Reading sheet: ${sheetName}`);
 
@@ -85,22 +99,27 @@ AutomationRouter.post("/add-data", async (req, res) => {
     let validationResult;
     if (type === "assignments") {
       validationResult = validateAssignmentsBatch(records);
-    } else {
+    } else if (type === "lectures") {
       validationResult = validateLecturesBatch(records);
+    } else if (type === "notes") {
+      validationResult = validateNotesBatch(records);
+    } else if (type === "clone") {
+      validationResult = validateCloneBatch(records);
+    } else {
+      validationResult = validateAssignmentCloneBatch(records);
     }
 
-    // Check for duplicate titles
-    const duplicates = checkDuplicateTitles(records);
+    // Duplicate titles check REMOVED - multiple rows can have same title
 
     // If validation fails, return detailed errors
-    if (!validationResult.valid || duplicates.length > 0) {
+    if (!validationResult.valid) {
       return res.status(400).json({
         message: "Data validation failed. Please fix the errors and try again.",
         validation: {
           totalRows: validationResult.totalRows,
           validRows: validationResult.validRows,
           invalidRows: validationResult.invalidRows,
-          duplicateTitles: duplicates
+          duplicateTitles: [] // Always empty since we don't check duplicates
         }
       });
     }
@@ -126,8 +145,12 @@ AutomationRouter.post("/add-data", async (req, res) => {
     for (let i = 0; i < records.length; i++) {
       const rec = records[i];
 
-      const redisId = rec.lecture_id
+      const redisId = type === "lectures" && rec.lecture_id
         ? rec.lecture_id
+        : type === "clone"
+        ? `${String(rec.source_lecture_id || "lec").replace(/\s+/g, "-")}-${uuidv4()}`
+        : type === "assignmentClone"
+        ? `${String(rec.source_assignment_id || "asn").replace(/\s+/g, "-")}-${uuidv4()}`
         : rec.title?.replace(/\s+/g, "-").toLowerCase() + "-" + uuidv4();
 
       rec.redisId = redisId;
@@ -205,7 +228,7 @@ AutomationRouter.post("/create-lectures", async (req, res) => {
     const allLectures = [];
 
     for (const key of keys) {
-      const data = await connection.hgetall(key);
+      const data = await getAllHashFields(key);
       if (data && Object.keys(data).length > 0) {
         allLectures.push(data);
       }
@@ -230,15 +253,21 @@ AutomationRouter.post("/create-lectures", async (req, res) => {
     }
 
     // 🔹 3 — Queue the job ONLY for pending
+    // Generate sessionId for progress tracking
+    const sessionId = `lecture-${Date.now()}`;
+
     const job = await lectureCreationQueue.add("bulkLectureCreateJob", {
       lectures: pendingLectures,
+      sessionId,
     });
 
     // 🔹 4 — Send result
     return res.json({
       message: "✅ Lecture creation job queued successfully.",
       queuedLectures: pendingLectures.length,
+      total: pendingLectures.length,
       jobId: job.id,
+      sessionId,
     });
 
   } catch (err) {
@@ -258,7 +287,7 @@ AutomationRouter.post("/clone-assessment-template", async (req, res) => {
     const allAssignments = [];
 
     for (const key of keys) {
-      const data = await connection.hgetall(key);
+      const data = await getAllHashFields(key);
       if (data && Object.keys(data).length > 0) {
         allAssignments.push(data);
       }
@@ -278,14 +307,20 @@ AutomationRouter.post("/clone-assessment-template", async (req, res) => {
     }
 
     // Queue cloning jobs
+    // Generate sessionId for progress tracking
+    const sessionId = `assessment-clone-${Date.now()}`;
+
     const job = await assessmentCloneRenameQueue.add("bulkAssessmentCloneJob", {
       assignments: pendingAssignments,
+      sessionId,
     });
 
     return res.json({
       message: "✅ Assessment cloning job queued successfully.",
       queuedAssignments: pendingAssignments.length,
+      total: pendingAssignments.length,
       jobId: job.id,
+      sessionId,
     });
   } catch (err) {
     console.error("❌ Error while queuing clone jobs:", err.message);
@@ -302,9 +337,9 @@ AutomationRouter.post("/create-assignments", async (req, res) => {
     console.log("Create Assignment is running")
     const keys = await connection.keys("assignments:*");
     const pendingAssignments = [];
-    
+
     for (const key of keys) {
-      const a = await connection.hgetall(key);
+      const a = await getAllHashFields(key);
 
       if (!a || Object.keys(a).length === 0) continue;
 
@@ -329,14 +364,21 @@ AutomationRouter.post("/create-assignments", async (req, res) => {
       });
     }
     console.log("🔷 pending Assignments length and the assignments====>", pendingAssignments.length, pendingAssignments)
+
+    // Generate sessionId for progress tracking
+    const sessionId = `assignment-${Date.now()}`;
+
     const job = await assignmentCreationQueue.add("bulkAssignmentCreateJob", {
       assignments: pendingAssignments,
+      sessionId,
     });
 
     return res.json({
       message: "Queued successfully",
       pendingCount: pendingAssignments.length,
+      total: pendingAssignments.length,
       jobId: job.id,
+      sessionId,
     });
 
   } catch (err) {
@@ -350,18 +392,18 @@ AutomationRouter.post("/create-assignments", async (req, res) => {
 
 AutomationRouter.post("/start-update-notes", async (req, res) => {
   try {
-    // Step 1 — Get all assignment data from Redis
-    const keys = await connection.keys("assignments:*");
-    
+    // Step 1 — Get all notes data from Redis
+    const keys = await connection.keys("notes:*");
+
     if (keys.length === 0) {
-      return res.status(404).json({ message: "No assignments found in Redis" });
+      return res.status(404).json({ message: "No notes data found in Redis. Please upload from the notes sheet first." });
     }
 
     const pendingNotesToUpdate = [];
 
     // Step 2 — One-pass loop
     for (const key of keys) {
-      const data = await connection.hgetall(key);
+      const data = await getAllHashFields(key);
       if (!data || Object.keys(data).length === 0) continue;
 
       // If notes are already updated → skip
@@ -383,20 +425,122 @@ AutomationRouter.post("/start-update-notes", async (req, res) => {
     }
 
     // Step 4 — Queue job
+    // Generate sessionId for progress tracking
+    const sessionId = `notes-update-${Date.now()}`;
+
     const job = await notesUpdationQueue.add("bulkNotesUpdateJob", {
       lectures: pendingNotesToUpdate,
+      sessionId,
     });
 
     return res.json({
       message: "✅ Notes updation job queued successfully.",
       queuedLectures: pendingNotesToUpdate.length,
+      total: pendingNotesToUpdate.length,
       jobId: job.id,
+      sessionId,
     });
 
   } catch (err) {
     console.error("❌ Error while queuing notes update:", err.message);
     return res.status(500).json({
       message: "Server error while adding notes update job",
+      error: err.message,
+    });
+  }
+});
+
+
+AutomationRouter.post("/start-clone-lectures", async (req, res) => {
+  try {
+    const keys = await connection.keys("clone:*");
+
+    if (keys.length === 0) {
+      return res.status(404).json({ message: "No clone data found in Redis. Please upload from the Lecture Clone sheet first." });
+    }
+
+    const pendingToClone = [];
+
+    for (const key of keys) {
+      const data = await getAllHashFields(key);
+      if (!data || Object.keys(data).length === 0) continue;
+
+      if (data.isCloned && data.isCloned.toLowerCase() === "yes") continue;
+
+      pendingToClone.push(data);
+    }
+
+    if (pendingToClone.length === 0) {
+      return res.status(200).json({ message: "✅ All lectures already cloned." });
+    }
+
+    const sessionId = `lecture-clone-${Date.now()}`;
+
+    const job = await lectureCloneQueue.add("bulkLectureCloneJob", {
+      lectures: pendingToClone,
+      sessionId,
+    });
+
+    return res.json({
+      message: "✅ Lecture clone job queued successfully.",
+      queuedLectures: pendingToClone.length,
+      total: pendingToClone.length,
+      jobId: job.id,
+      sessionId,
+    });
+
+  } catch (err) {
+    console.error("❌ Error while queuing lecture clone job:", err.message);
+    return res.status(500).json({
+      message: "Server error while queuing lecture clone job.",
+      error: err.message,
+    });
+  }
+});
+
+
+AutomationRouter.post("/start-clone-assignments", async (req, res) => {
+  try {
+    const keys = await connection.keys("assignmentClone:*");
+
+    if (keys.length === 0) {
+      return res.status(404).json({ message: "No assignment clone data found in Redis. Please upload from the Assignment Clone sheet first." });
+    }
+
+    const pendingToClone = [];
+
+    for (const key of keys) {
+      const data = await getAllHashFields(key);
+      if (!data || Object.keys(data).length === 0) continue;
+
+      if (data.isCloned && data.isCloned.toLowerCase() === "yes") continue;
+
+      pendingToClone.push(data);
+    }
+
+    if (pendingToClone.length === 0) {
+      return res.status(200).json({ message: "✅ All assignments already cloned." });
+    }
+
+    const sessionId = `assignment-clone-${Date.now()}`;
+
+    const job = await assignmentCloneQueue.add("bulkAssignmentCloneJob", {
+      assignments: pendingToClone,
+      sessionId,
+    });
+
+    return res.json({
+      message: "✅ Assignment clone job queued successfully.",
+      queuedAssignments: pendingToClone.length,
+      total: pendingToClone.length,
+      jobId: job.id,
+      sessionId,
+    });
+
+  } catch (err) {
+    console.error("❌ Error while queuing assignment clone job:", err.message);
+    return res.status(500).json({
+      message: "Server error while queuing assignment clone job.",
       error: err.message,
     });
   }
@@ -415,10 +559,10 @@ AutomationRouter.get("/get-automation-status", async (req, res) => {
       });
     }
 
-    const validTypes = ["assignments", "lectures"];
+    const validTypes = ["assignments", "lectures", "notes", "clone", "assignmentClone"];
     if (!validTypes.includes(type)) {
       return res.status(400).json({
-        message: "Invalid type. Use ?type=assignments OR ?type=lectures",
+        message: "Invalid type. Use ?type=assignments, ?type=lectures, ?type=notes, ?type=clone, or ?type=assignmentClone",
       });
     }
 
@@ -435,16 +579,24 @@ AutomationRouter.get("/get-automation-status", async (req, res) => {
     const results = [];
 
     for (const key of keys) {
-      const data = await connection.hgetall(key);
+      const data = await getAllHashFields(key);
 
       if (data && Object.keys(data).length > 0) {
         // REMOVE PREFIX like "assignments:" or "lectures:"
         const cleanKey = key.replace(`${type}:`, "");
 
         // Return ALL fields from Redis (entire sheet row data)
+        // Format error messages to be user-friendly
         results.push({
           ...data,
           redisKey: cleanKey,
+          // Format error messages for user-friendly display
+          assessmentCloneError: formatErrorMessage(data.assessmentCloneError || ""),
+          assignmentCreationError: formatErrorMessage(data.assignmentCreationError || ""),
+          notesUpdateError: formatErrorMessage(data.notesUpdateError || ""),
+          lectureCreationError: formatErrorMessage(data.lectureCreationError || ""),
+          lectureCloneError: formatErrorMessage(data.lectureCloneError || ""),
+          assignmentCloneError: formatErrorMessage(data.assignmentCloneError || ""),
         });
       }
     }
@@ -455,6 +607,7 @@ AutomationRouter.get("/get-automation-status", async (req, res) => {
       const bIndex = parseInt(b.rowIndex) || 999999;
       return aIndex - bIndex;
     });
+
     return res.json({
       type,
       total: results.length,
@@ -478,14 +631,14 @@ AutomationRouter.patch("/update-automation-status", async (req, res) => {
     console.log("🚀 ~ type:", type)
 
     if (!type) {
-      return res.status(400).json({ message: "Missing ?type=assignments|lectures" });
+      return res.status(400).json({ message: "Missing ?type=assignments|lectures|notes|clone|assignmentClone" });
     }
 
     if (!redisId || !field || typeof newValue === "undefined") {
       return res.status(400).json({ message: "Missing required fields" });
     }
 
-    const redisKey = type==="assignments" ? `assignments:${redisId}`:`lectures:${redisId}`
+    const redisKey = type === "assignments" ? `assignments:${redisId}` : type === "lectures" ? `lectures:${redisId}` : type === "notes" ? `notes:${redisId}` : type === "clone" ? `clone:${redisId}` : `assignmentClone:${redisId}`
     console.log("🚀 ~ redisKey:", redisKey)
 
     // Check Redis existence
@@ -528,6 +681,39 @@ AutomationRouter.patch("/update-automation-status", async (req, res) => {
       }
     }
 
+    if (type === "notes") {
+      switch (field) {
+        case "notesUpdated":
+          redisField = "isNotesUpdated";
+          sheetField = "isNotesUpdated";
+          break;
+        default:
+          return res.status(400).json({ message: "Invalid field for notes" });
+      }
+    }
+
+    if (type === "clone") {
+      switch (field) {
+        case "lectureCloned":
+          redisField = "isCloned";
+          sheetField = "isCloned";
+          break;
+        default:
+          return res.status(400).json({ message: "Invalid field for clone" });
+      }
+    }
+
+    if (type === "assignmentClone") {
+      switch (field) {
+        case "assignmentCloned":
+          redisField = "isCloned";
+          sheetField = "isCloned";
+          break;
+        default:
+          return res.status(400).json({ message: "Invalid field for assignmentClone" });
+      }
+    }
+
     // ---------- UPDATE REDIS ----------
     await connection.hset(redisKey, redisField, newValue);
 
@@ -535,7 +721,7 @@ AutomationRouter.patch("/update-automation-status", async (req, res) => {
     const sheets = getSheetsClient();
     const spreadsheetId = GOOGLE_SHEET_ID;
 
-    const sheetName = type === "assignments" ? "assignment" : "lecture";
+    const sheetName = type === "assignments" ? "assignment" : type === "lectures" ? "lecture" : type === "notes" ? "notes" : type === "clone" ? "Lecture Clone" : "Assignment Clone";
     const range = `${sheetName}!A:Z`;
 
     const response = await sheets.spreadsheets.values.get({
@@ -592,9 +778,9 @@ AutomationRouter.delete("/cleardata", async (req, res) => {
     const type = req.query.type; // assignments | lectures
     console.log("🚀 ~ type:", type);
 
-    if (!type || !["assignments", "lectures"].includes(type)) {
+    if (!type || !["assignments", "lectures", "notes", "clone", "assignmentClone"].includes(type)) {
       return res.status(400).json({
-        message: "Invalid type. Allowed: assignments | lectures",
+        message: "Invalid type. Allowed: assignments | lectures | notes | clone | assignmentClone",
       });
     }
 
@@ -604,7 +790,7 @@ AutomationRouter.delete("/cleardata", async (req, res) => {
     const sheets = getSheetsClient();
     const spreadsheetId = GOOGLE_SHEET_ID;
 
-    const sheetName = type === "assignments" ? "assignment" : "lecture";
+    const sheetName = type === "assignments" ? "assignment" : type === "lectures" ? "lecture" : type === "notes" ? "notes" : type === "clone" ? "Lecture Clone" : "Assignment Clone";
     const range = `${sheetName}!A:Z`;
 
     // Step 1: Read sheet
@@ -679,13 +865,20 @@ AutomationRouter.delete("/cleardata", async (req, res) => {
     const assignmentQueues = [
       "assessmentCloneRenameQueue",
       "assignmentCreationQueue",
-      "notesUpdationQueue",
     ];
 
     const lectureQueues = ["lectureCreationQueue"];
 
+    const notesQueues = ["notesUpdationQueue"];
+    const cloneQueues = ["lectureCloneQueue"];
+    const assignmentCloneQueues = ["assignmentCloneQueue"];
+
     const queuesToClear =
-      type === "assignments" ? assignmentQueues : lectureQueues;
+      type === "assignments" ? assignmentQueues :
+      type === "lectures" ? lectureQueues :
+      type === "notes" ? notesQueues :
+      type === "clone" ? cloneQueues :
+      assignmentCloneQueues;
 
     for (const q of queuesToClear) {
       const pattern = `bull:${q}:*`;
@@ -714,4 +907,57 @@ AutomationRouter.delete("/cleardata", async (req, res) => {
       error: err.message,
     });
   }
+});
+
+// ✅ SSE endpoint for streaming live progress
+AutomationRouter.get("/progress-stream", (req, res) => {
+  const sessionId = req.query.sessionId;
+
+  if (!sessionId) {
+    return res.status(400).json({ message: "Missing sessionId parameter" });
+  }
+
+  console.log(`📡 SSE Client connected for session: ${sessionId}`);
+
+  // Set headers for SSE
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no'); // Disable nginx buffering
+
+  // Send initial connection message
+  res.write(`data: ${JSON.stringify({
+    type: 'connected',
+    sessionId,
+    message: 'Connected to live progress stream',
+    timestamp: new Date().toISOString()
+  })}\n\n`);
+
+  // Create listener for this client
+  const listener = (data) => {
+    console.log(`📤 SSE Listener received event:`, {
+      sessionId: data.sessionId,
+      type: data.type,
+      targetSession: sessionId,
+      match: data.sessionId === sessionId
+    });
+
+    // Only send events for this session
+    if (data.sessionId === sessionId) {
+      try {
+        console.log(`✅ Sending SSE event to client:`, data.type);
+        res.write(`data: ${JSON.stringify(data)}\n\n`);
+      } catch (err) {
+        console.error(`❌ Error writing SSE data:`, err.message);
+      }
+    }
+  };
+
+  progressEmitter.on('progress', listener);
+
+  // Handle client disconnect
+  req.on('close', () => {
+    progressEmitter.off('progress', listener);
+    console.log(`🔌 Client disconnected from progress stream: ${sessionId}`);
+  });
 });

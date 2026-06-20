@@ -15,7 +15,8 @@ function isValidDate(dateString) {
 
   // Try parsing different date formats
   const formats = [
-    /^\d{1,2}\/\d{1,2}\/\d{4}$/,  // DD/MM/YYYY or MM/DD/YYYY
+    /^\d{1,2}\/\d{1,2}\/\d{4}$/,  // DD/MM/YYYY or MM/DD/YYYY with slashes
+    /^\d{1,2}-\d{1,2}-\d{4}$/,    // DD-MM-YYYY or MM-DD-YYYY with hyphens
     /^\d{4}-\d{2}-\d{2}$/,         // YYYY-MM-DD
   ];
 
@@ -28,10 +29,11 @@ function isValidDate(dateString) {
     : dateString.split('/');
 
   let year, month, day;
-  if (dateString.includes('-')) {
+  if (parts[0].length === 4) {
+    // YYYY-MM-DD format
     [year, month, day] = parts;
   } else {
-    // Assume DD/MM/YYYY format
+    // DD/MM/YYYY or DD-MM-YYYY format
     [day, month, year] = parts;
   }
 
@@ -49,8 +51,33 @@ function isValidTime(timeString) {
     return false;
   }
 
-  const timeRegex = /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/;
-  return timeRegex.test(timeString.trim());
+  // Accept both : and - as separators (18:55 or 18-55)
+  const timeRegex = /^([01]?[0-9]|2[0-3])[:|-][0-5][0-9]$/;
+  const isValid = timeRegex.test(timeString.trim());
+
+  return isValid;
+}
+
+/**
+ * Parses date and time strings into a Date object
+ */
+function parseDateTime(dateString, timeString) {
+  const parts = dateString.includes('-')
+    ? dateString.split('-')
+    : dateString.split('/');
+
+  let year, month, day;
+  if (parts[0].length === 4) {
+    // YYYY-MM-DD format
+    [year, month, day] = parts;
+  } else {
+    // DD/MM/YYYY or DD-MM-YYYY format
+    [day, month, year] = parts;
+  }
+
+  const [hour, minute] = timeString.split(/[:-]/).map(Number);
+
+  return new Date(year, month - 1, day, hour, minute, 0);
 }
 
 /**
@@ -67,19 +94,28 @@ function isEndAfterStart(startDate, startTime, endDate, endTime) {
 
     // Parse dates
     const parseDate = (dateStr) => {
-      if (dateStr.includes('-')) {
-        return new Date(dateStr);
+      const parts = dateStr.includes('-')
+        ? dateStr.split('-')
+        : dateStr.split('/');
+
+      let year, month, day;
+      if (parts[0].length === 4) {
+        // YYYY-MM-DD format
+        [year, month, day] = parts;
+      } else {
+        // DD/MM/YYYY or DD-MM-YYYY format
+        [day, month, year] = parts;
       }
-      const [day, month, year] = dateStr.split('/');
+
       return new Date(year, month - 1, day);
     };
 
     const start = parseDate(startDate);
     const end = parseDate(endDate);
 
-    // Parse times
-    const [startHour, startMin] = startTime.split(':').map(Number);
-    const [endHour, endMin] = endTime.split(':').map(Number);
+    // Parse times (handle both : and - separators)
+    const [startHour, startMin] = startTime.split(/[:-]/).map(Number);
+    const [endHour, endMin] = endTime.split(/[:-]/).map(Number);
 
     start.setHours(startHour, startMin);
     end.setHours(endHour, endMin);
@@ -134,28 +170,75 @@ export function validateAssignment(assignment, rowIndex) {
     errors.push("Section is required");
   }
 
-  // Date and time validation
-  if (!isValidDate(assignment.startDate)) {
-    errors.push("Start Date is invalid or missing (use DD/MM/YYYY or YYYY-MM-DD)");
-  }
+  // Skip date/time validations if assignment is already created
+  const isAlreadyCreated = assignment.isAssignmentCreated &&
+                           assignment.isAssignmentCreated.toLowerCase() === "yes";
 
-  if (!isValidTime(assignment.startTime)) {
-    errors.push("Start Time is invalid or missing (use HH:MM in 24-hour format)");
-  }
+  if (!isAlreadyCreated) {
+    // Date and time validation
+    if (!isValidDate(assignment.startDate)) {
+      errors.push("Start Date is invalid or missing (use DD-MM-YYYY or DD/MM/YYYY or YYYY-MM-DD)");
+    }
 
-  if (!isValidDate(assignment.endDate)) {
-    errors.push("End Date is invalid or missing (use DD/MM/YYYY or YYYY-MM-DD)");
-  }
+    if (!isValidTime(assignment.startTime)) {
+      errors.push("Start Time is invalid or missing (use HH:MM in 24-hour format)");
+    }
 
-  if (!isValidTime(assignment.endTime)) {
-    errors.push("End Time is invalid or missing (use HH:MM in 24-hour format)");
-  }
+    if (!isValidDate(assignment.endDate)) {
+      errors.push("End Date is invalid or missing (use DD-MM-YYYY or DD/MM/YYYY or YYYY-MM-DD)");
+    }
 
-  // Validate end is after start
-  if (isValidDate(assignment.startDate) && isValidTime(assignment.startTime) &&
-      isValidDate(assignment.endDate) && isValidTime(assignment.endTime)) {
-    if (!isEndAfterStart(assignment.startDate, assignment.startTime, assignment.endDate, assignment.endTime)) {
-      errors.push("End Date/Time must be after Start Date/Time");
+    if (!isValidTime(assignment.endTime)) {
+      errors.push("End Time is invalid or missing (use HH:MM in 24-hour format)");
+    }
+
+    // Validate end is after start
+    if (isValidDate(assignment.startDate) && isValidTime(assignment.startTime) &&
+        isValidDate(assignment.endDate) && isValidTime(assignment.endTime)) {
+      if (!isEndAfterStart(assignment.startDate, assignment.startTime, assignment.endDate, assignment.endTime)) {
+        errors.push("End Date/Time must be after Start Date/Time");
+      }
+    }
+
+    // Validate schedule date/time is not in the past
+    if (isValidDate(assignment.startDate) && isValidTime(assignment.startTime)) {
+      const scheduleDateTime = parseDateTime(assignment.startDate, assignment.startTime);
+      const now = new Date();
+
+      if (scheduleDateTime < now) {
+        const diff = Math.floor((now - scheduleDateTime) / 60000); // difference in minutes
+        errors.push(`Schedule Date/Time is ${diff} minute(s) in the past. Must be current time or future.`);
+      }
+    }
+
+    // Validate conclude date/time constraints
+    if (isValidDate(assignment.startDate) && isValidTime(assignment.startTime) &&
+        isValidDate(assignment.endDate) && isValidTime(assignment.endTime)) {
+
+      const scheduleDate = assignment.startDate.split(/[-/]/);
+      const endDate = assignment.endDate.split(/[-/]/);
+
+      // Normalize dates for comparison
+      const schedDay = scheduleDate[0].length === 4 ? scheduleDate[2] : scheduleDate[0];
+      const schedMonth = scheduleDate[0].length === 4 ? scheduleDate[1] : scheduleDate[1];
+      const schedYear = scheduleDate[0].length === 4 ? scheduleDate[0] : scheduleDate[2];
+
+      const endDay = endDate[0].length === 4 ? endDate[2] : endDate[0];
+      const endMonth = endDate[0].length === 4 ? endDate[1] : endDate[1];
+      const endYear = endDate[0].length === 4 ? endDate[0] : endDate[2];
+
+      // If both dates are same, conclude time must be after schedule time
+      if (schedDay === endDay && schedMonth === endMonth && schedYear === endYear) {
+        const [schedHour, schedMin] = assignment.startTime.split(/[:-]/).map(Number);
+        const [endHour, endMin] = assignment.endTime.split(/[:-]/).map(Number);
+
+        const schedMinutes = schedHour * 60 + schedMin;
+        const endMinutes = endHour * 60 + endMin;
+
+        if (endMinutes <= schedMinutes) {
+          errors.push("When Schedule and Conclude dates are same, Conclude time must be after Schedule time");
+        }
+      }
     }
   }
 
@@ -209,23 +292,33 @@ export function validateLecture(lecture, rowIndex) {
     errors.push("Section is required");
   }
 
-  // Date and time validation
-  if (!isValidDate(lecture.startDate)) {
-    errors.push("Start Date is invalid or missing (use DD/MM/YYYY or YYYY-MM-DD)");
-  }
+  // Skip date/time validations if lecture is already created
+  const isAlreadyCreated = lecture.isLectureCreated &&
+                           lecture.isLectureCreated.toLowerCase() === "yes";
 
-  if (!isValidTime(lecture.startTime)) {
-    errors.push("Start Time is invalid or missing (use HH:MM in 24-hour format)");
-  }
+  if (!isAlreadyCreated) {
+    // Date and time validation
+    if (!isValidDate(lecture.startDate)) {
+      errors.push("Start Date is invalid or missing (use DD-MM-YYYY or DD/MM/YYYY or YYYY-MM-DD)");
+    }
 
-  // Zoom link validation (optional but if provided should be valid URL)
-  if (lecture.zoom_link && lecture.zoom_link.trim() !== "" && lecture.zoom_link !== "N/A") {
-    try {
-      new URL(lecture.zoom_link);
-    } catch {
-      errors.push("Zoom Link must be a valid URL");
+    if (!isValidTime(lecture.startTime)) {
+      errors.push("Start Time is invalid or missing (use HH:MM in 24-hour format)");
+    }
+
+    // Validate schedule date/time is not in the past
+    if (isValidDate(lecture.startDate) && isValidTime(lecture.startTime)) {
+      const scheduleDateTime = parseDateTime(lecture.startDate, lecture.startTime);
+      const now = new Date();
+
+      if (scheduleDateTime < now) {
+        const diff = Math.floor((now - scheduleDateTime) / 60000); // difference in minutes
+        errors.push(`Schedule Date/Time is ${diff} minute(s) in the past. Must be current time or future.`);
+      }
     }
   }
+
+  // Zoom link validation - REMOVED (not mandatory, can be any value)
 
   return {
     valid: errors.length === 0,
@@ -265,6 +358,68 @@ export function validateAssignmentsBatch(assignments) {
 }
 
 /**
+ * Validates a single notes row
+ * Returns { valid: boolean, errors: string[] }
+ */
+export function validateNote(note, rowIndex) {
+  const errors = [];
+
+  if (!note.title || note.title.trim() === "") {
+    errors.push("Title is required");
+  }
+
+  if (!note.batch || note.batch.trim() === "") {
+    errors.push("Batch is required");
+  }
+
+  if (!note.section || note.section.trim() === "") {
+    errors.push("Section is required");
+  }
+
+  if (!note.notes || note.notes.trim() === "") {
+    errors.push("Notes content is required");
+  }
+
+  // lecture_id is optional — no validation needed
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    rowIndex
+  };
+}
+
+/**
+ * Validates all notes rows in a batch
+ * Returns { valid: boolean, totalRows: number, validRows: number, invalidRows: ValidationError[] }
+ */
+export function validateNotesBatch(notes) {
+  const results = notes.map((note, index) => {
+    const rowIndex = note.rowIndex || index + 2;
+    const validation = validateNote(note, rowIndex);
+    return {
+      ...validation,
+      rowIndex,
+      title: note.title || "Untitled"
+    };
+  });
+
+  const invalidRows = results.filter(r => !r.valid);
+  const validRows = results.filter(r => r.valid);
+
+  return {
+    valid: invalidRows.length === 0,
+    totalRows: notes.length,
+    validRows: validRows.length,
+    invalidRows: invalidRows.map(r => ({
+      rowIndex: r.rowIndex,
+      title: r.title,
+      errors: r.errors
+    }))
+  };
+}
+
+/**
  * Validates all lectures in a batch
  * Returns { valid: boolean, totalRows: number, validRows: number, invalidRows: ValidationError[] }
  */
@@ -285,6 +440,182 @@ export function validateLecturesBatch(lectures) {
   return {
     valid: invalidRows.length === 0,
     totalRows: lectures.length,
+    validRows: validRows.length,
+    invalidRows: invalidRows.map(r => ({
+      rowIndex: r.rowIndex,
+      title: r.title,
+      errors: r.errors
+    }))
+  };
+}
+
+/**
+ * Validates a single clone row
+ * Returns { valid: boolean, errors: string[] }
+ */
+export function validateCloneRow(row, rowIndex) {
+  const errors = [];
+
+  if (!row.source_lecture_id || String(row.source_lecture_id).trim() === "") {
+    errors.push("source_lecture_id is required");
+  }
+
+  if (!row.target_batch || row.target_batch.trim() === "") {
+    errors.push("target_batch is required");
+  }
+
+  if (!row.target_section || row.target_section.trim() === "") {
+    errors.push("target_section is required");
+  }
+
+  if (!isValidDate(row.startDate)) {
+    errors.push("Start Date is invalid or missing (use DD-MM-YYYY or DD/MM/YYYY or YYYY-MM-DD)");
+  }
+
+  if (!isValidTime(row.startTime)) {
+    errors.push("Start Time is invalid or missing (use HH:MM in 24-hour format)");
+  }
+
+  if (!isValidDate(row.endDate)) {
+    errors.push("End Date is invalid or missing (use DD-MM-YYYY or DD/MM/YYYY or YYYY-MM-DD)");
+  }
+
+  if (!isValidTime(row.endTime)) {
+    errors.push("End Time is invalid or missing (use HH:MM in 24-hour format)");
+  }
+
+  if (isValidDate(row.startDate) && isValidTime(row.startTime) &&
+      isValidDate(row.endDate) && isValidTime(row.endTime)) {
+    if (!isEndAfterStart(row.startDate, row.startTime, row.endDate, row.endTime)) {
+      errors.push("End Date/Time must be after Start Date/Time");
+    }
+  }
+
+  if (isValidDate(row.startDate) && isValidTime(row.startTime)) {
+    const scheduleDateTime = parseDateTime(row.startDate, row.startTime);
+    const now = new Date();
+    if (scheduleDateTime < now) {
+      const diff = Math.floor((now - scheduleDateTime) / 60000);
+      errors.push(`Schedule Date/Time is ${diff} minute(s) in the past. Must be current time or future.`);
+    }
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    rowIndex
+  };
+}
+
+/**
+ * Validates all clone rows in a batch
+ * Returns { valid: boolean, totalRows: number, validRows: number, invalidRows: ValidationError[] }
+ */
+export function validateCloneBatch(rows) {
+  const results = rows.map((row, index) => {
+    const rowIndex = row.rowIndex || index + 2;
+    const validation = validateCloneRow(row, rowIndex);
+    return {
+      ...validation,
+      rowIndex,
+      title: row.source_lecture_title || row.source_lecture_id || `Row ${rowIndex}`
+    };
+  });
+
+  const invalidRows = results.filter(r => !r.valid);
+  const validRows = results.filter(r => r.valid);
+
+  return {
+    valid: invalidRows.length === 0,
+    totalRows: rows.length,
+    validRows: validRows.length,
+    invalidRows: invalidRows.map(r => ({
+      rowIndex: r.rowIndex,
+      title: r.title,
+      errors: r.errors
+    }))
+  };
+}
+
+/**
+ * Validates a single assignment clone row
+ * Returns { valid: boolean, errors: string[] }
+ */
+export function validateAssignmentCloneRow(row, rowIndex) {
+  const errors = [];
+
+  if (!row.source_assignment_id || String(row.source_assignment_id).trim() === "") {
+    errors.push("source_assignment_id is required");
+  }
+
+  if (!row.target_batch || row.target_batch.trim() === "") {
+    errors.push("target_batch is required");
+  }
+
+  if (!row.target_section || row.target_section.trim() === "") {
+    errors.push("target_section is required");
+  }
+
+  if (!isValidDate(row.startDate)) {
+    errors.push("Start Date is invalid or missing (use DD-MM-YYYY or DD/MM/YYYY or YYYY-MM-DD)");
+  }
+
+  if (!isValidTime(row.startTime)) {
+    errors.push("Start Time is invalid or missing (use HH:MM in 24-hour format)");
+  }
+
+  if (!isValidDate(row.endDate)) {
+    errors.push("End Date is invalid or missing (use DD-MM-YYYY or DD/MM/YYYY or YYYY-MM-DD)");
+  }
+
+  if (!isValidTime(row.endTime)) {
+    errors.push("End Time is invalid or missing (use HH:MM in 24-hour format)");
+  }
+
+  if (isValidDate(row.startDate) && isValidTime(row.startTime) &&
+      isValidDate(row.endDate) && isValidTime(row.endTime)) {
+    if (!isEndAfterStart(row.startDate, row.startTime, row.endDate, row.endTime)) {
+      errors.push("End Date/Time must be after Start Date/Time");
+    }
+  }
+
+  if (isValidDate(row.startDate) && isValidTime(row.startTime)) {
+    const scheduleDateTime = parseDateTime(row.startDate, row.startTime);
+    const now = new Date();
+    if (scheduleDateTime < now) {
+      const diff = Math.floor((now - scheduleDateTime) / 60000);
+      errors.push(`Schedule Date/Time is ${diff} minute(s) in the past. Must be current time or future.`);
+    }
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    rowIndex
+  };
+}
+
+/**
+ * Validates all assignment clone rows in a batch
+ * Returns { valid: boolean, totalRows: number, validRows: number, invalidRows: ValidationError[] }
+ */
+export function validateAssignmentCloneBatch(rows) {
+  const results = rows.map((row, index) => {
+    const rowIndex = row.rowIndex || index + 2;
+    const validation = validateAssignmentCloneRow(row, rowIndex);
+    return {
+      ...validation,
+      rowIndex,
+      title: row.source_assignment_title || row.source_assignment_id || `Row ${rowIndex}`
+    };
+  });
+
+  const invalidRows = results.filter(r => !r.valid);
+  const validRows = results.filter(r => r.valid);
+
+  return {
+    valid: invalidRows.length === 0,
+    totalRows: rows.length,
     validRows: validRows.length,
     invalidRows: invalidRows.map(r => ({
       rowIndex: r.rowIndex,

@@ -10,8 +10,8 @@ const Navbar = ({ onOpenConfigModal }) => {
         <Button
         type="primary"
         variant="dashed"
-        href="https://docs.google.com/spreadsheets/d/19jut7sjUkAaUshglvwZIr1NigBUFccLmXI6JSgtJVVo/edit?gid=0#gid=0"
-        target="blank"
+        href="https://docs.google.com/spreadsheets/d/1aTRqMYzgjJJ8WOe3vN6vD_jWlNkC4VO4DmVcdu69Rf8/edit"
+        target="_blank"
         >
           Example CSV
         </Button>
