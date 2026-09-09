@@ -1,3 +1,5 @@
+import { toDateTimeLocal } from "./dateTimeLocal.js";
+
 export async function createLecture(page, lecture) {
   const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -245,18 +247,9 @@ export async function createLecture(page, lecture) {
       state: "visible",
       timeout: 10000,
     });
-    await schedule_Date_Time_Input.click({ force: true }); // focus field
-    // Step 1️⃣ Type the date (e.g. "06-11-2025")
-    await page.keyboard.type(`${lecture.startDate}`, { delay: 30 });
-
-    // // Step 2️⃣ Add a space
-    await page.keyboard.press("Tab");
-
-    // Step 3️⃣ Type the time (e.g. "08:00 PM")
-    await page.keyboard.type(lecture.startTime, { delay: 30 });
-
-    // Step 4️⃣ Confirm
-    await page.keyboard.press("Enter");
+    await schedule_Date_Time_Input.fill(
+      toDateTimeLocal(lecture.startDate, lecture.startTime),
+    );
 
     console.log(`✅ Schedule entered: ${lecture.startDate} ${lecture.startTime}`);
     /// end date time
@@ -268,15 +261,9 @@ export async function createLecture(page, lecture) {
       state: "visible",
       timeout: 10000,
     });
-    await end_Date_Time_Input.click({ force: true }); // focus field
-    // Step 1️⃣ Type the date (e.g. "06-11-2025")
-    await page.keyboard.type(`${lecture.endDate}`, { delay: 30 });
-
-    // // Step 2️⃣ Add a space
-    await page.keyboard.press("Tab");
-
-    // Step 3️⃣ Type the time (e.g. "08:00 PM")
-    await page.keyboard.type(lecture.endTime, { delay: 30 });
+    await end_Date_Time_Input.fill(
+      toDateTimeLocal(lecture.endDate, lecture.endTime),
+    );
     
     await page.waitForTimeout(1500); 
     console.log(`✅ Schedule will end at: ${lecture.endDate} ${lecture.endTime}`);

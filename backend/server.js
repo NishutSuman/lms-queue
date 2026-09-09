@@ -8,6 +8,9 @@ import { getAuthClient } from "./configs/googleSheetClient.js";
 import { AutomationRouter } from "./routes/automation.routes.js";
 import { ConfigRouter } from "./routes/config.routes.js";
 import { setupProgressSubscriber } from "./utils/progressSubscriber.js";
+// ── Auto mode (SQLite-backed) — additive, does not affect the sheet-based flow ──
+import { DbRouter } from "./routes/master.routes.js";
+import { initSchema } from "./db/index.js";
 
 
 
@@ -49,9 +52,13 @@ app.get("/test", (req, res) => {
   res.send("This is a test route");
 });
 
-// ✅ Main API routes
+// ✅ Main API routes (Sheet mode)
 app.use("/api", AutomationRouter);
 app.use("/config", ConfigRouter);
+
+// ✅ Auto mode (DB-backed) — separate namespace so the two modes never overlap
+initSchema();
+app.use("/db", DbRouter);
 
 // Set up Redis subscriber for progress events from workers
 setupProgressSubscriber();

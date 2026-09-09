@@ -1,3 +1,5 @@
+import { toDateTimeLocal } from "./dateTimeLocal.js";
+
 export async function cloneAssignment(page, assignment) {
 	try {
 		console.log(
@@ -48,17 +50,35 @@ export async function cloneAssignment(page, assignment) {
 			await page.keyboard.type(value, { delay: 30 });
 			await page.waitForTimeout(800);
 
-			// Match option text exactly, allowing an optional " (ID)" suffix the LMS may append
-			const option = page
-				.locator(".react-select__option")
-				.filter({ hasText: new RegExp(`^${escapeRegex(value)}(\\s*\\(\\d+\\))?$`) })
-				.first();
+			// The search can return more than one option (e.g. the real session AND a
+			// "Lecture Note: ..." entry). Strip any trailing " (ID)" and compare
+			// case-insensitively, preferring an EXACT match so a prefixed entry is never
+			// chosen; fall back to startsWith only when there is no exact match.
+			const wanted = value.replace(/\s+/g, " ").trim().toLowerCase();
 
-			if ((await option.count()) === 0) {
+			const options = page.locator(".react-select__option");
+			await options.first().waitFor({ state: "visible", timeout: 5000 }).catch(() => {});
+
+			const total = await options.count();
+			let exactIdx = -1;
+			let startsWithIdx = -1;
+			for (let i = 0; i < total; i++) {
+				const raw = (await options.nth(i).innerText()) || "";
+				const stripped = raw
+					.replace(/\s*\([^)]*\)\s*$/, "")
+					.replace(/\s+/g, " ")
+					.trim()
+					.toLowerCase();
+				if (stripped === wanted) { exactIdx = i; break; }
+				if (startsWithIdx === -1 && stripped.startsWith(wanted)) startsWithIdx = i;
+			}
+
+			const chosenIdx = exactIdx !== -1 ? exactIdx : startsWithIdx;
+			if (chosenIdx === -1) {
 				throw new Error(`"${value}" not found in ${labelText}`);
 			}
 
-			await option.click();
+			await options.nth(chosenIdx).click();
 			await page.waitForTimeout(300);
 		}
 
@@ -98,31 +118,8 @@ export async function cloneAssignment(page, assignment) {
 			await input.waitFor({ state: "visible", timeout: 10000 });
 			await input.scrollIntoViewIfNeeded();
 
-			// Step 1: Clear completely
-			await clearInputCompletely(input);
-
-			await page.waitForTimeout(300);
-
-			// Step 2: CLICK AGAIN to activate date segment
-			await input.click({ force: true });
-
-			// 🔥 CRITICAL: Press ArrowLeft multiple times to reach start (date section)
-			for (let i = 0; i < 10; i++) {
-				await page.keyboard.press("ArrowLeft");
-			}
-
-			// Step 3: Type DATE
-			await page.keyboard.type(dateVal, { delay: 30 });
-
-			// Step 4: Move to TIME
-			await page.keyboard.press("Tab");
-
-			// Step 5: Type TIME
-			await page.keyboard.type(timeVal, { delay: 30 });
-
-			// Step 6: Confirm
-			await page.keyboard.press("Tab");
-			await page.waitForTimeout(500);
+			// Native <input type="datetime-local">: set canonical YYYY-MM-DDTHH:mm value (locale-proof).
+			await input.fill(toDateTimeLocal(dateVal, timeVal));
 
 			const finalValue = await input.inputValue();
 			console.log(`📅 Final value: ${finalValue}`);
@@ -130,6 +127,12 @@ export async function cloneAssignment(page, assignment) {
 
 		await fillDatePicker(
 			/^Schedule/,
+			assignment.startDate,
+			assignment.startTime,
+		);
+		// Actual Start Time — mirror the schedule value (new field between Schedule and Concludes)
+		await fillDatePicker(
+			/^Actual Start Time/,
 			assignment.startDate,
 			assignment.startTime,
 		);

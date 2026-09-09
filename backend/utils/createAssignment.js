@@ -1,4 +1,5 @@
 import { emitProgress, LogType } from "./progressEmitter.js";
+import { toDateTimeLocal } from "./dateTimeLocal.js";
 
 export async function createAssignment(page, assignment, sessionId) {
 	// Helper function to log and emit progress
@@ -377,43 +378,45 @@ export async function createAssignment(page, assignment, sessionId) {
 			timeout: 10000,
 		});
 		await schedule_Date_Time_Input.scrollIntoViewIfNeeded(); // 🔧 FIX: Scroll date field into view
-		await schedule_Date_Time_Input.click({ force: true }); // focus field
-		// Step 1️⃣ Type the date (e.g. "06-11-2025")
-		await page.keyboard.type(`${assignment.startDate}`, { delay: 30 });
-
-		// // Step 2️⃣ Add a space
-		await page.keyboard.press("Tab");
-
-		// Step 3️⃣ Type the time (e.g. "08:00 PM")
-		await page.keyboard.type(assignment.startTime, { delay: 30 });
+		await schedule_Date_Time_Input.fill(
+			toDateTimeLocal(assignment.startDate, assignment.startTime),
+		);
 		const actualValue = await schedule_Date_Time_Input.inputValue();
 		console.log("Actual input value (browser):", actualValue);
-
-		// Step 4️⃣ Confirm
-		await page.keyboard.press("Enter");
 
 		logStep(
 			`✅ Schedule entered: ${assignment.startDate} ${assignment.startTime}`,
 		);
+		/// actual start time (mirror of schedule — required field added between Schedule and Concludes)
+		const actual_Start_Time_Input = page.locator(
+			"xpath=/html/body/div/div/div/main/form/div[2]/div[4]/div/label[2]/div/div/input",
+		);
+		await actual_Start_Time_Input.waitFor({
+			state: "visible",
+			timeout: 10000,
+		});
+		await actual_Start_Time_Input.scrollIntoViewIfNeeded();
+		await actual_Start_Time_Input.fill(
+			toDateTimeLocal(assignment.startDate, assignment.startTime),
+		);
+
+		logStep(
+			`✅ Actual Start Time entered (same as schedule): ${assignment.startDate} ${assignment.startTime}`,
+		);
+
 		/// end date time
 
 		const end_Date_Time_Input = page.locator(
-			"xpath=/html/body/div/div/div/main/form/div[2]/div[4]/div/label[2]/div/div/input",
+			"xpath=/html/body/div/div/div/main/form/div[2]/div[4]/div/label[3]/div/div/input",
 		);
 		await end_Date_Time_Input.waitFor({
 			state: "visible",
 			timeout: 10000,
 		});
 		await end_Date_Time_Input.scrollIntoViewIfNeeded(); // 🔧 FIX: Scroll date field into view
-		await end_Date_Time_Input.click({ force: true }); // focus field
-		// Step 1️⃣ Type the date (e.g. "06-11-2025")
-		await page.keyboard.type(`${assignment.endDate}`, { delay: 30 });
-
-		// // Step 2️⃣ Add a space
-		await page.keyboard.press("Tab");
-
-		// Step 3️⃣ Type the time (e.g. "08:00 PM")
-		await page.keyboard.type(assignment.endTime, { delay: 30 });
+		await end_Date_Time_Input.fill(
+			toDateTimeLocal(assignment.endDate, assignment.endTime),
+		);
 
 		// 🔧 Handle Show Score checkbox based on showScore column value
 		if (assignment.showScore && assignment.showScore.toLowerCase() === "yes") {

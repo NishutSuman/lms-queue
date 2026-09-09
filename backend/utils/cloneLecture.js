@@ -1,3 +1,5 @@
+import { toDateTimeLocal } from "./dateTimeLocal.js";
+
 export async function cloneLecture(page, lecture) {
   try {
     console.log(`🚀 Cloning lecture ID ${lecture.source_lecture_id} → ${lecture.target_batch} / ${lecture.target_section}`);
@@ -41,18 +43,37 @@ export async function cloneLecture(page, lecture) {
       await page.keyboard.type(value, { delay: 30 });
       await page.waitForTimeout(800);
 
-      // Match option text exactly, allowing an optional " (ID)" suffix the LMS may append
-      const option = page.locator(".react-select__option")
-        .filter({ hasText: new RegExp(`^${escapeRegex(value)}(\\s*\\(\\d+\\))?$`) })
-        .first();
+      // Select by normalized text instead of an anchored regex. The LMS appends
+      // an " (ID)" suffix to some options (notably lectures); we strip any
+      // trailing "(...)" before comparing so the ID is ignored. Prefer an exact
+      // match, fall back to startsWith. This is robust against stray whitespace
+      // and Playwright-version differences in hasText/regex normalization that
+      // caused the previous "(\d+)?$" match to miss valid options.
+      const wanted = value.replace(/\s+/g, " ").trim().toLowerCase();
 
-      const optionCount = await option.count();
-      if (optionCount === 0) {
+      const options = page.locator(".react-select__option");
+      await options.first().waitFor({ state: "visible", timeout: 5000 }).catch(() => {});
+
+      const total = await options.count();
+      let exactIdx = -1;
+      let startsWithIdx = -1;
+      for (let i = 0; i < total; i++) {
+        const raw = (await options.nth(i).innerText()) || "";
+        const stripped = raw
+          .replace(/\s*\([^)]*\)\s*$/, "") // drop trailing " (ID)" the LMS may append
+          .replace(/\s+/g, " ")
+          .trim()
+          .toLowerCase();
+        if (stripped === wanted) { exactIdx = i; break; }
+        if (startsWithIdx === -1 && stripped.startsWith(wanted)) startsWithIdx = i;
+      }
+
+      const chosenIdx = exactIdx !== -1 ? exactIdx : startsWithIdx;
+      if (chosenIdx === -1) {
         throw new Error(`"${value}" not found in ${labelText} dropdown. Please verify the name matches exactly.`);
       }
 
-      await option.waitFor({ state: "visible", timeout: 5000 });
-      await option.click();
+      await options.nth(chosenIdx).click();
       await page.waitForTimeout(300);
       console.log(`✅ Selected ${labelText}: ${value}`);
     }
@@ -68,37 +89,31 @@ export async function cloneLecture(page, lecture) {
       await clearAndSelect("Associated Lecture", lecture.associated_lecture);
     }
 
-    // Schedule start date/time
-    // The copy form pre-fills these from the source — triple-click selects all so typing replaces cleanly
+    // Schedule start date/time.
+    // This is a native <input type="datetime-local">. Its underlying value is
+    // always "YYYY-MM-DDTHH:mm" (24-hour) no matter how the browser locale
+    // *displays* it. Typing the raw string broke on locales that show 12-hour
+    // AM/PM (e.g. en-IN on Mac), so we set the canonical value via fill().
     const scheduleInput = page.locator(
       "xpath=/html/body/div/div/div/main/form/div[1]/div[4]/div/label[1]/div/div/input"
     );
     await scheduleInput.waitFor({ state: "visible", timeout: 15000 });
     await scheduleInput.scrollIntoViewIfNeeded();
-    await scheduleInput.click({ clickCount: 3, force: true });
-    await page.keyboard.press("Delete");
-    await page.waitForTimeout(200);
-    await page.keyboard.type(lecture.startDate, { delay: 30 });
-    await page.keyboard.press("Tab");
-    await page.keyboard.type(lecture.startTime, { delay: 30 });
-    // Tab away instead of Enter — Enter would submit the form before end date is filled
-    await page.keyboard.press("Tab");
-    await page.waitForTimeout(500);
-    console.log(`✅ Schedule: ${lecture.startDate} ${lecture.startTime}`);
+    const scheduleValue = toDateTimeLocal(lecture.startDate, lecture.startTime);
+    await scheduleInput.fill(scheduleValue);
+    await page.waitForTimeout(300);
+    console.log(`✅ Schedule set: ${scheduleValue}`);
 
     // Schedule end date/time
     const endInput = page.locator(
       "xpath=/html/body/div/div/div/main/form/div[1]/div[4]/div/label[2]/div/div/input"
     );
     await endInput.waitFor({ state: "visible", timeout: 15000 });
-    await endInput.click({ clickCount: 3, force: true });
-    await page.keyboard.press("Delete");
-    await page.waitForTimeout(200);
-    await page.keyboard.type(lecture.endDate, { delay: 30 });
-    await page.keyboard.press("Tab");
-    await page.keyboard.type(lecture.endTime, { delay: 30 });
-    await page.waitForTimeout(1500);
-    console.log(`✅ Concludes: ${lecture.endDate} ${lecture.endTime}`);
+    await endInput.scrollIntoViewIfNeeded();
+    const endValue = toDateTimeLocal(lecture.endDate, lecture.endTime);
+    await endInput.fill(endValue);
+    await page.waitForTimeout(500);
+    console.log(`✅ Concludes set: ${endValue}`);
 
     // Click submit
     const submitButton = page.locator('button[type="submit"]');

@@ -1,12 +1,22 @@
 import React from "react";
 import { Button } from "antd";
+import { useNavigate } from "react-router-dom";
 
 const Navbar = ({ onOpenConfigModal }) => {
+  const navigate = useNavigate();
   return (
     <nav className="w-full flex items-center justify-between px-6 py-4 bg-white shadow-sm">
-      <div className="text-2xl font-semibold text-gray-800">Automation</div>
+      <div
+        className="text-2xl font-semibold text-gray-800 cursor-pointer"
+        onClick={() => navigate("/")}
+      >
+        Automation
+      </div>
 
       <div className="flex items-center gap-4">
+        <Button type="primary" ghost onClick={() => navigate("/auto")}>
+          ⚡ Auto Mode
+        </Button>
         <Button
         type="primary"
         variant="dashed"

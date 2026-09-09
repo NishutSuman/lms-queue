@@ -21,5 +21,8 @@ export const lectureCreationQueue = new Queue('lectureCreationQueue', { connecti
 export const lectureCloneQueue = new Queue('lectureCloneQueue', { connection });
 export const assignmentCloneQueue = new Queue('assignmentCloneQueue', { connection });
 
+// Auto mode (DB-driven) — executes a generated run's items
+export const dbRunQueue = new Queue('dbRunQueue', { connection });
+
 // 🧩 Just for sanity logs
 console.log('✅ Queues initialized: automationQueue');

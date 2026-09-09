@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import App from "./App";
 import Home from "./pages/Home";
 import Dashboard from "./pages/Dashboard";
+import AutoMode from "./pages/AutoMode";
 import "antd/dist/reset.css"; // AntD reset (v5)
 import "./index.css"; // Tailwind / global styles
 
@@ -14,6 +15,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(
         <Route path="/" element={<App />}>
           <Route index element={<Home />} />
           <Route path="dashboard" element={<Dashboard />} />
+          <Route path="auto" element={<AutoMode />} />
           {/* Catch-all route for refresh/404 - redirect to home */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
